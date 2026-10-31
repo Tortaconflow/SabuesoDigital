@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sabueso Digital 2.0 — CÍDIKS Sales Engine</title>
+    <meta name="description" content="Motor interno de prospección ética B2B para CÍDIKS en Oaxaca.">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Top Progress Bar -->
+    <div class="ios-progress-bar" id="ios-progress-bar"></div>
+
+    <!-- Splash Screen -->
+    <div class="splash-screen" id="splash-screen">
+        <div class="splash-content">
+            <div class="splash-logo"><i class="fa-solid fa-dog"></i></div>
+            <div class="splash-name">Sabueso Digital 2.0</div>
+            <div class="splash-sub">CÍDIKS Sales Engine</div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Mobile Overlay -->
+        <div class="mobile-overlay" id="mobile-overlay"></div>
+
+        <!-- Sidebar Controls -->
+        <aside class="sidebar" id="sidebar">
+            <button class="btn-close-sidebar" id="btn-close-sidebar"><i class="fa-solid fa-xmark"></i></button>
+            <div class="logo-area">
+                <div class="logo-icon"><i class="fa-solid fa-dog"></i></div>
+                <div class="logo-text">
+                    <span class="brand">Sabueso Digital 2.0</span>
+                    <span class="sub">CÍDIKS Sales Engine</span>
+                </div>
+            </div>
+
+            <form id="search-form" class="control-form">
+                <div class="form-group">
+                    <label for="category"><i class="fa-solid fa-briefcase"></i> Categoría del Negocio</label>
+                    <input type="text" id="category" placeholder="Ej. Hoteles, Restaurantes, Clínicas" required value="">
+                    <span class="helper-text">Ejemplos: Hotel boutique, Restaurante tradicional, Clínica dental.</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="location"><i class="fa-solid fa-location-dot"></i> Ubicación</label>
+                    <input type="text" id="location" placeholder="Ej. Oaxaca Centro, Puerto Escondido" required value="">
+                    <span class="helper-text">Ejemplos: Oaxaca, Puerto Escondido, Huatulco, Tabasco.</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="limit"><i class="fa-solid fa-list-ol"></i> Cantidad de Prospectos</label>
+                    <select id="limit">
+                        <option value="3">3 prospectos</option>
+                        <option value="5" selected>5 prospectos</option>
+                        <option value="10">10 prospectos</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="depth"><i class="fa-solid fa-layer-group"></i> Profundidad de Búsqueda</label>
+                    <select id="depth">
+                        <option value="1" selected>Página 1 (Sitios oficiales)</option>
+                        <option value="2">Página 2 (Locales medianos)</option>
+                        <option value="3">Página 3 (Oportunidades desatendidas)</option>
+                    </select>
+                </div>
+
+                <!-- Auto-Audit Toggle -->
+                <div class="form-group auto-audit-toggle">
+                    <label class="toggle-label">
+                        <span><i class="fa-solid fa-microscope"></i> Auto-auditar al buscar</span>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="auto-audit-toggle">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- API Config Area -->
+                <div class="api-config-area">
+                    <div class="api-provider-card" id="provider-card">
+                        <div class="provider-row">
+                            <span class="provider-icon search-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+                            <div class="provider-info">
+                                <span class="provider-label">Motor de búsqueda</span>
+                                <span class="provider-value" id="provider-name">Cargando...</span>
+                            </div>
+                            <span class="provider-status" id="provider-search-status"></span>
+                        </div>
+                        <div class="provider-divider"></div>
+                        <div class="provider-row">
+                            <span class="provider-icon ai-icon"><i class="fa-solid fa-robot"></i></span>
+                            <div class="provider-info">
+                                <span class="provider-label">Copiloto IA / Reglas</span>
+                                <span class="provider-value" id="ai-provider-name">Cargando...</span>
+                            </div>
+                            <span class="provider-status" id="provider-ai-status"></span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-config-link" id="btn-config-api">
+                        <i class="fa-solid fa-gears"></i> Claves y Configuración
+                    </button>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="btn-search">
+                    <span class="btn-text"><i class="fa-solid fa-magnifying-glass"></i> Investigar Prospectos</span>
+                    <span class="loading-spinner hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Investigando...</span>
+                </button>
+            </form>
+
+            <!-- Search History Section -->
+            <div class="history-section" id="history-section">
+                <div class="history-header" id="history-header">
+                    <span><i class="fa-solid fa-clock-rotate-left"></i> Historial reciente</span>
+                    <div class="history-actions">
+                        <button class="history-clear-btn" id="history-clear-btn" title="Limpiar historial">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                        <i class="fa-solid fa-chevron-down history-chevron"></i>
+                    </div>
+                </div>
+                <div class="history-body">
+                    <div class="history-chips" id="history-chips">
+                        <div class="history-empty">No hay búsquedas recientes</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <p>CÍDIKS · Oaxaca, México</p>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <button class="btn btn-mobile-menu" id="btn-mobile-menu">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="welcome-text">
+                    <h2>Centro de Prospección CÍDIKS</h2>
+                    <p>Problema observable → Evidencia → Necesidad → Conversación → Venta real.</p>
+                </div>
+                <div class="header-actions" style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" id="btn-import-open" title="Importar archivos Excel o CSV históricos">
+                        <i class="fa-solid fa-file-import"></i> Importar Excel
+                    </button>
+                    <button class="btn btn-secondary" id="btn-duplicates-open" title="Revisar posibles prospectos duplicados">
+                        <i class="fa-solid fa-clone"></i> Duplicados
+                    </button>
+                    <div class="export-dropdown" style="display: inline-flex; gap: 4px;">
+                        <button class="btn btn-secondary" id="btn-export-csv" title="Exportar a archivo CSV">
+                            <i class="fa-solid fa-file-csv"></i> CSV
+                        </button>
+                        <button class="btn btn-secondary" id="btn-export-xlsx" title="Exportar a archivo Excel XLSX">
+                            <i class="fa-solid fa-file-excel"></i> Excel
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Pipeline Flow Steps -->
+            <section class="pipeline-flow" id="pipeline-flow">
+                <div class="pipeline-step active" id="step-buscar">
+                    <div class="step-number">1</div>
+                    <div class="step-body">
+                        <i class="fa-solid fa-magnifying-glass step-icon-fa"></i>
+                        <span class="step-label">Investigar</span>
+                    </div>
+                    <span class="step-count" id="step-count-buscar">—</span>
+                </div>
+                <div class="pipeline-connector" id="connector-1"></div>
+                <div class="pipeline-step" id="step-auditar">
+                    <div class="step-number">2</div>
+                    <div class="step-body">
+                        <i class="fa-solid fa-microscope step-icon-fa"></i>
+                        <span class="step-label">Auditar</span>
+                    </div>
+                    <span class="step-count" id="step-count-auditar">—</span>
+                </div>
+                <div class="pipeline-connector" id="connector-2"></div>
+                <div class="pipeline-step" id="step-calificar">
+                    <div class="step-number">3</div>
+                    <div class="step-body">
+                        <i class="fa-solid fa-star step-icon-fa"></i>
+                        <span class="step-label">Propuesta</span>
+                    </div>
+                    <span class="step-count" id="step-count-calificar">—</span>
+                </div>
+                <div class="pipeline-connector" id="connector-3"></div>
+                <div class="pipeline-step" id="step-contactar">
+                    <div class="step-number">4</div>
+                    <div class="step-body">
+                        <i class="fa-solid fa-paper-plane step-icon-fa"></i>
+                        <span class="step-label">Contactar</span>
+                    </div>
+                    <span class="step-count" id="step-count-contactar">—</span>
+                </div>
+            </section>
+
+            <!-- Stats Bar with Real Data -->
+            <section class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon icon-blue"><i class="fa-solid fa-briefcase"></i></div>
+                    <div class="stat-info">
+                        <h3>Prospectos</h3>
+                        <p class="stat-val" id="stat-total">0</p>
+                        <span class="stat-micro" id="micro-total">Cargando base local SQLite...</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon icon-red"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <div class="stat-info">
+                        <h3>Oportunidades Críticas</h3>
+                        <p class="stat-val" id="stat-critical">0</p>
+                        <span class="stat-micro" id="micro-critical">Puntuación ≥85 o sin web.</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon icon-green"><i class="fa-solid fa-user-check"></i></div>
+                    <div class="stat-info">
+                        <h3>Contactados</h3>
+                        <p class="stat-val" id="stat-contacted">0</p>
+                        <span class="stat-micro" id="micro-contacted">Confirmados manualmente por una persona.</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon icon-purple" style="color: #8b5cf6;"><i class="fa-solid fa-sack-dollar"></i></div>
+                    <div class="stat-info">
+                        <h3>Ingreso Cobrado</h3>
+                        <p class="stat-val" id="stat-revenue">$0 MXN</p>
+                        <span class="stat-micro" id="micro-revenue">Ventas cobradas efectivamente.</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Debug Panel -->
+            <div class="debug-panel hidden" id="debug-panel">
+                <div class="debug-header" id="debug-header">
+                    <span><i class="fa-solid fa-bug"></i> Información de Diagnóstico de Búsqueda</span>
+                    <i class="fa-solid fa-chevron-down debug-chevron"></i>
+                </div>
+                <div class="debug-body" id="debug-body" style="display: none;">
+                    <div class="debug-row">
+                        <span>Query ejecutada:</span>
+                        <code id="debug-query">-</code>
+                    </div>
+                    <div class="debug-row">
+                        <span>Motor usado:</span>
+                        <code id="debug-engine">-</code>
+                    </div>
+                    <div class="debug-row">
+                        <span>Resultados (raw):</span>
+                        <code id="debug-raw">0</code>
+                    </div>
+                    <div class="debug-row">
+                        <span>Resultados (filtrados):</span>
+                        <code id="debug-filtered">0</code>
+                    </div>
+                    <div class="debug-row debug-error" id="debug-error-row" style="display: none;">
+                        <span>Error:</span>
+                        <code id="debug-error">-</code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Auto-Audit Progress Bar -->
+            <div class="auto-audit-bar hidden" id="auto-audit-bar">
+                <div class="audit-bar-text" id="audit-bar-text">Auditando 0/0 prospectos...</div>
+                <div class="audit-bar-track">
+                    <div class="audit-bar-fill" id="audit-bar-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- Table View -->
+            <section class="table-container">
+                <div class="table-header">
+                    <h3>Bandeja de Prospectos</h3>
+                    <div class="table-legend">
+                        <span class="badge badge-critical">Crítica</span>
+                        <span class="badge badge-high">Alta</span>
+                        <span class="badge badge-medium">Media</span>
+                        <span class="badge badge-low">Baja</span>
+                    </div>
+                </div>
+
+                <!-- Quick Filter Buttons -->
+                <div class="quick-filters" id="quick-filters">
+                    <button class="filter-chip active" data-filter="all"><i class="fa-solid fa-list"></i> Todos</button>
+                    <button class="filter-chip" data-filter="top5"><i class="fa-solid fa-inbox"></i> Top 5 Recomendados</button>
+                    <button class="filter-chip" data-filter="critical"><i class="fa-solid fa-fire"></i> Alta prioridad</button>
+                    <button class="filter-chip" data-filter="unaudited"><i class="fa-solid fa-clock"></i> Sin auditar</button>
+                    <button class="filter-chip" data-filter="contacted"><i class="fa-solid fa-paper-plane"></i> Contactados</button>
+                    <button class="filter-chip" data-filter="favorites"><i class="fa-solid fa-star"></i> Favoritos</button>
+                </div>
+
+                <!-- Real-time Progress Logger -->
+                <div class="progress-logger-container hidden" id="progress-logger-container">
+                    <span class="logger-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+                    <span class="logger-text" id="logger-text">Iniciando prospección...</span>
+                </div>
+                
+                <div class="table-wrapper">
+                    <table class="prospects-table" id="prospects-table">
+                        <thead>
+                            <tr>
+                                <th class="sort-col" data-col="nombre">Nombre <i class="fa-solid fa-sort sort-icon"></i></th>
+                                <th>Sitio Web</th>
+                                <th class="sort-col" data-col="score">Puntuación <i class="fa-solid fa-sort sort-icon"></i></th>
+                                <th class="sort-col" data-col="prioridad">Prioridad <i class="fa-solid fa-sort sort-icon"></i></th>
+                                <th>Estado</th>
+                                <th>Auditoría</th>
+                                <th><i class="fa-solid fa-star" title="Favoritos"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <!-- Injected dynamically by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <!-- Right Side Panel Details -->
+        <aside class="detail-panel hidden" id="detail-panel">
+            <div class="panel-header">
+                <h3>Ficha Comercial del Negocio</h3>
+                <button class="btn-close" id="panel-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="panel-body">
+                <form id="edit-prospect-form">
+                    <input type="hidden" id="edit-id">
+                    
+                    <div class="form-group">
+                        <label for="edit-name">Nombre Comercial</label>
+                        <input type="text" id="edit-name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-web">Sitio Web Oficial</label>
+                        <input type="url" id="edit-web" placeholder="https://...">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="edit-phone">Teléfono Publicado</label>
+                            <input type="text" id="edit-phone">
+                        </div>
+                        <div class="form-group half">
+                            <label for="edit-whatsapp">WhatsApp Directo</label>
+                            <input type="text" id="edit-whatsapp" placeholder="Ej. +52 951 123 4567">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-email">Correo de Contacto</label>
+                        <input type="text" id="edit-email" placeholder="correo@ejemplo.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-socials">Redes Sociales</label>
+                        <input type="text" id="edit-socials" placeholder="Enlaces de Facebook, Instagram o LinkedIn">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group third">
+                            <label for="edit-score">Puntuación (0-100)</label>
+                            <input type="number" id="edit-score" min="0" max="100">
+                        </div>
+                        <div class="form-group third">
+                            <label for="edit-priority">Prioridad</label>
+                            <select id="edit-priority">
+                                <option value="critical">Oportunidad crítica</option>
+                                <option value="high">Oportunidad alta</option>
+                                <option value="medium">Oportunidad media</option>
+                                <option value="low">Oportunidad baja</option>
+                            </select>
+                        </div>
+                        <div class="form-group third">
+                            <label for="edit-status">Estado Comercial</label>
+                            <select id="edit-status">
+                                <option value="investigado">Investigado</option>
+                                <option value="auditado">Auditado</option>
+                                <option value="contactado">Contactado</option>
+                                <option value="interesado">Interesado</option>
+                                <option value="no_interesa">No Interesa</option>
+                                <option value="propuesta">Propuesta Enviada</option>
+                                <option value="ganado">Venta Ganada</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-issues">Observación / Problema Observable</label>
+                        <textarea id="edit-issues" rows="2"></textarea>
+                    </div>
+
+                    <!-- Visual Playwright Evidence Section -->
+                    <div class="form-group evidence-section" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                        <label style="display: flex; justify-content: space-between; align-items: center;">
+                            <span><i class="fa-solid fa-camera"></i> Evidencia Visual (Playwright)</span>
+                            <span class="badge" id="evidence-badge" style="background: #374151;">PENDIENTE_REVISION</span>
+                        </label>
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <input type="text" id="verify-text-input" placeholder="Texto que debe ser visible para validar..." style="font-size: 12px; flex: 1;">
+                            <button type="button" class="btn btn-secondary" id="btn-run-visual-audit" style="font-size: 11px; white-space: nowrap;">
+                                <i class="fa-solid fa-eye"></i> Comprobar
+                            </button>
+                        </div>
+                        <div id="screenshot-container" style="margin-top: 8px; display: none;">
+                            <a id="screenshot-link" href="#" target="_blank">
+                                <img id="screenshot-img" src="" alt="Captura real del sitio" style="width: 100%; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); max-height: 140px; object-fit: cover;">
+                            </a>
+                            <span style="font-size: 11px; color: var(--text-muted); display: block; margin-top: 4px;">Haz clic en la imagen para ver la captura completa en alta resolución.</span>
+                        </div>
+                    </div>
+
+                    <!-- Mensajes CÍDIKS -->
+                    <div class="form-group">
+                        <label for="edit-message"><i class="fa-solid fa-envelope-open-text"></i> Asistente de Mensajes CÍDIKS</label>
+                        <div class="msg-tabs">
+                            <button type="button" class="msg-tab active" id="tab-frio" onclick="selectMsgTab('frio')">Mensaje Frío</button>
+                            <button type="button" class="msg-tab" id="tab-calido" onclick="selectMsgTab('calido')">Mensaje Redes</button>
+                            <button type="button" class="msg-tab" id="tab-seg" onclick="selectMsgTab('seg')">Seguimiento</button>
+                        </div>
+                        <textarea id="edit-message" rows="7"></textarea>
+                    </div>
+
+                    <div class="panel-actions">
+                        <button type="button" class="btn btn-secondary" id="btn-save-edit"><i class="fa-solid fa-save"></i> Guardar Ficha</button>
+                    </div>
+                </form>
+
+                <hr class="panel-divider">
+
+                <div class="outreach-actions">
+                    <h4>Acción de Contacto Humano</h4>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
+                        Copiar el mensaje NO lo marca como enviado. Confirma el contacto únicamente tras enviarlo.
+                    </p>
+                    <div class="outreach-buttons" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <a href="#" target="_blank" class="btn btn-wa btn-outreach" id="link-wa">
+                            <i class="fa-brands fa-whatsapp"></i> Abrir WhatsApp
+                        </a>
+                        <a href="#" class="btn btn-mail btn-outreach" id="link-mail">
+                            <i class="fa-solid fa-envelope"></i> Abrir Correo
+                        </a>
+                        <button class="btn btn-copy" id="btn-copy-msg">
+                            <i class="fa-solid fa-copy"></i> Copiar Mensaje
+                        </button>
+                    </div>
+
+                    <button type="button" class="btn btn-primary btn-block" id="btn-confirm-contact-modal" style="background: #10b981; border-color: #059669;">
+                        <i class="fa-solid fa-check-double"></i> Confirmar que ya contacté a este negocio
+                    </button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Modal para Confirmación de Contacto Humano -->
+    <div class="modal hidden" id="contact-confirm-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-user-check"></i> Confirmar Contacto Comercial</h3>
+                <button class="btn-close" id="contact-modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-info">Regla de integridad: No se debe registrar como contactado ningún negocio sin acción humana real previa.</p>
+                <form id="contact-confirm-form" class="modal-form">
+                    <div class="form-group">
+                        <label for="contact-channel"><i class="fa-solid fa-share-nodes"></i> Canal utilizado</label>
+                        <select id="contact-channel" required>
+                            <option value="whatsapp">WhatsApp Directo</option>
+                            <option value="email">Correo Electrónico</option>
+                            <option value="llamada">Llamada Telefónica</option>
+                            <option value="redes">Mensaje Directo en Redes (Instagram/FB)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="contact-notes"><i class="fa-solid fa-comment-dots"></i> Notas del contacto o respuesta inicial</label>
+                        <textarea id="contact-notes" rows="3" placeholder="Ej. Se envió el mensaje frío a las 11:30 AM solicitando platicar con el gerente..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="background: #10b981;">
+                        <i class="fa-solid fa-check"></i> Registrar Contacto en CRM
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Importar Excel / CSV -->
+    <div class="modal hidden" id="import-modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-file-import"></i> Importar Historial de Prospectos</h3>
+                <button class="btn-close" id="import-modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-info">Importa archivos CSV o Excel (.xlsx). Las observaciones importadas entrarán como <strong>PENDIENTE_REVISION</strong> para asegurar su verificación visual posterior.</p>
+                <div class="form-group">
+                    <label for="import-file-path">Ruta o nombre del archivo en la carpeta del proyecto:</label>
+                    <input type="text" id="import-file-path" placeholder="Ej. prospectos_hoteles_puerto_escondido.csv" value="prospectos_hoteles_puerto_escondido.csv">
+                </div>
+                <button type="button" class="btn btn-secondary btn-block" id="btn-import-preview-action">
+                    <i class="fa-solid fa-magnifying-glass"></i> Ver Vista Previa de Columnas
+                </button>
+
+                <div id="import-preview-results" style="margin-top: 16px; display: none; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 6px;">
+                    <p id="import-summary-text" style="font-weight: 600;"></p>
+                    <div id="import-preview-table-wrap" style="overflow-x: auto; max-height: 160px; margin-top: 8px;"></div>
+                    <button type="button" class="btn btn-primary btn-block" id="btn-import-execute-action" style="margin-top: 12px;">
+                        <i class="fa-solid fa-file-arrow-up"></i> Confirmar e Importar a Base Local
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Duplicados -->
+    <div class="modal hidden" id="duplicates-modal">
+        <div class="modal-content" style="max-width: 650px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-clone"></i> Posibles Coincidencias de Prospectos</h3>
+                <button class="btn-close" id="duplicates-modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-info">Detección por mismo dominio web, teléfono o similitud de nombre comercial. No se fusiona nada automáticamente sin revisión humana.</p>
+                <div id="duplicates-list-container" style="max-height: 350px; overflow-y: auto;">
+                    <div style="text-align: center; padding: 20px; color: var(--text-muted);">Cargando análisis de duplicados...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Configurar APIs -->
+    <div class="modal hidden" id="api-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-gears"></i> Configuración de API Keys</h3>
+                <button class="btn-close" id="modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-info">Las claves se conservan en memoria del servidor local o en tu archivo .env local. Sabueso 2.0 funciona perfectamente offline con reglas determinísticas.</p>
+                <form id="api-config-form" class="modal-form">
+                    <div class="form-group">
+                        <label for="modal-gemini-key"><i class="fa-solid fa-robot"></i> Gemini API Key</label>
+                        <input type="password" id="modal-gemini-key" placeholder="Pega tu API Key de Gemini (opcional)">
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-serpapi-key"><i class="fa-solid fa-magnifying-glass-chart"></i> SerpAPI Key</label>
+                        <input type="password" id="modal-serpapi-key" placeholder="Pega tu API Key de SerpAPI (opcional)">
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-maps-key"><i class="fa-solid fa-map-location-dot"></i> Google Maps API Key</label>
+                        <input type="password" id="modal-maps-key" placeholder="Pega tu API Key de Google Maps (opcional)">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" id="btn-save-api">
+                        <i class="fa-solid fa-floppy-disk"></i> Guardar Configuración
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Main JS script -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

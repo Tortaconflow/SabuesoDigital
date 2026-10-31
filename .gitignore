@@ -1,0 +1,38 @@
+# Ambientes y secretos
+.env
+*.env
+.env.*
+!.env.example
+
+# Bases de datos y almacenamiento local
+*.db
+*.sqlite
+*.sqlite3
+data/
+*.bak
+
+# Datos comerciales y prospectos locales
+prospectos_current.json
+prospectos_*.csv
+prospectos_exportados.csv
+ddg_response.html
+*.xlsx
+
+# Evidencia visual y capturas
+screenshots/
+evidencias/
+
+# Python y caché
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / SO
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
