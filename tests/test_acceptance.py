@@ -37,11 +37,17 @@ def test_01_app_initialization(client):
 # 2. El acceso directo y lanzador funcionan cuando el servidor está apagado
 def test_02_launcher_script_exists():
     bat_file = BASE_DIR / "iniciar_sabueso.bat"
+    launch_py = BASE_DIR / "launch.py"
     assert bat_file.exists()
-    content = bat_file.read_text(encoding="utf-8")
-    assert "127.0.0.1:5000" in content
-    assert "python app.py" in content
-    assert "start http://127.0.0.1:5000/" in content
+    assert launch_py.exists()
+    
+    bat_content = bat_file.read_text(encoding="utf-8")
+    assert "launch.py" in bat_content
+
+    py_content = launch_py.read_text(encoding="utf-8")
+    assert "127.0.0.1" in py_content
+    assert "app.py" in py_content
+    assert "check_sabueso_health" in py_content
 
 # 3. No quedan credenciales escritas en el código fuente de la aplicación
 def test_03_no_plain_credentials_in_code():

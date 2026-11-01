@@ -30,8 +30,16 @@ import evidence_engine
 import copilot
 import importer
 
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout.reconfigure(encoding='utf-8')
+# Configuración de codificación y registro en log
+try:
+    if sys.stdout is None or not hasattr(sys.stdout, "write"):
+        _log_f = open(BASE_DIR / "app.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = _log_f
+        sys.stderr = _log_f
+    elif getattr(sys.stdout, "encoding", None) != 'utf-8':
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 # Suppress deprecation warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
