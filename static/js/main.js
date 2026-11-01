@@ -108,7 +108,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const editStatus = document.getElementById("edit-status");
     const editIssues = document.getElementById("edit-issues");
     const editMessage = document.getElementById("edit-message");
+    const editMsgApproved = document.getElementById("edit-msg-approved");
+    const editRespuesta = document.getElementById("edit-respuesta");
+    const editNecesidad = document.getElementById("edit-necesidad");
+    const editPropuestaEnviada = document.getElementById("edit-propuesta-enviada");
+    const editVentaAcordada = document.getElementById("edit-venta-acordada");
+    const editVentaMonto = document.getElementById("edit-venta-monto");
+    const editIngresoCobrado = document.getElementById("edit-ingreso-cobrado");
     const btnSaveEdit = document.getElementById("btn-save-edit");
+
+    // Quarantine Modal Elements
+    const btnQuarantineOpen = document.getElementById("btn-quarantine-open");
+    const quarantineModal = document.getElementById("quarantine-modal");
+    const quarantineModalClose = document.getElementById("quarantine-modal-close");
+    const quarantineListContainer = document.getElementById("quarantine-list-container");
+    const badgeQuarantineCount = document.getElementById("badge-quarantine-count");
     
     // Playwright Evidence in Detail Panel
     const evidenceBadge = document.getElementById("evidence-badge");
@@ -297,32 +311,40 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!res.ok) return;
             const m = await res.json();
             
-            if (statTotal) statTotal.textContent = m.total;
-            if (statCritical) statCritical.textContent = m.criticos;
-            if (statContacted) statContacted.textContent = m.contactados;
+            const investigados = m.prospectos_investigados ?? m.total ?? 0;
+            const generados = m.mensajes_generados ?? 0;
+            const aprobados = m.mensajes_aprobados ?? 0;
+            const contactados = m.contactos_confirmados ?? m.contactados ?? 0;
+            const respuestas = m.respuestas_recibidas ?? m.respuestas ?? 0;
+            const necesidades = m.necesidades_confirmadas ?? 0;
+            const propuestas = m.propuestas_enviadas ?? 0;
+            const ventas = m.ventas_acordadas ?? m.ventas_confirmadas ?? 0;
+            const cobrados = Number(m.ingresos_cobrados || 0);
+            const cuarentena = m.en_cuarentena ?? 0;
+
+            if (statTotal) statTotal.textContent = investigados;
+            if (statCritical) statCritical.textContent = m.criticos ?? 0;
+            if (statContacted) statContacted.textContent = contactados;
             if (statRevenue) {
-                statRevenue.textContent = `$${Number(m.ingresos_cobrados).toLocaleString('es-MX')} MXN`;
+                statRevenue.textContent = `$${cobrados.toLocaleString('es-MX')} MXN`;
+            }
+            if (badgeQuarantineCount) {
+                badgeQuarantineCount.textContent = cuarentena;
             }
 
             if (microTotal) {
-                microTotal.textContent = m.total === 0 
+                microTotal.textContent = investigados === 0 
                     ? "Sin prospectos. Realiza una búsqueda para comenzar." 
-                    : `${m.total} prospectos en base local SQLite.`;
+                    : `${investigados} investigados · ${generados} borradores · ${aprobados} aprobados.`;
             }
             if (microCritical) {
-                microCritical.textContent = m.criticos === 0
-                    ? "Ningún prospecto crítico detectado."
-                    : `${m.criticos} negocios con fallas observables prioritarias.`;
+                microCritical.textContent = `${m.criticos || 0} críticos · ${propuestas} propuesta(s) enviada(s).`;
             }
             if (microContacted) {
-                microContacted.textContent = m.contactados === 0
-                    ? "Aún no has registrado contactos humanos."
-                    : `${m.contactados} contactos confirmados personalmente.`;
+                microContacted.textContent = `${contactados} confirmados · ${respuestas} respuesta(s) · ${necesidades} necesidad(es).`;
             }
             if (microRevenue) {
-                microRevenue.textContent = m.ventas_confirmadas > 0
-                    ? `${m.ventas_confirmadas} venta(s) acordada(s).`
-                    : "Registra cobros cuando se concreten ventas.";
+                microRevenue.textContent = `${ventas} venta(s) acordada(s) · Cobrado: $${cobrados.toLocaleString('es-MX')} MXN.`;
             }
         } catch (err) {
             console.error("Error al actualizar métricas:", err);
@@ -634,6 +656,13 @@ document.addEventListener("DOMContentLoaded", () => {
             editPriority.value = p.prioridad || "medium";
             editStatus.value = p.estado_comercial || "investigado";
             editIssues.value = p.problemas_detectados || "";
+            if (editMsgApproved) editMsgApproved.checked = Boolean(p.mensaje_aprobado);
+            if (editRespuesta) editRespuesta.value = p.respuesta || "";
+            if (editNecesidad) editNecesidad.value = p.necesidad_expresada || "";
+            if (editPropuestaEnviada) editPropuestaEnviada.checked = Boolean(p.propuesta_enviada);
+            if (editVentaAcordada) editVentaAcordada.checked = Boolean(p.venta_acordada);
+            if (editVentaMonto) editVentaMonto.value = p.venta_monto || 0;
+            if (editIngresoCobrado) editIngresoCobrado.value = p.ingreso_cobrado || 0;
 
             // Message tab
             selectMsgTab(activeTab, p);
@@ -645,6 +674,7 @@ document.addEventListener("DOMContentLoaded", () => {
             updateOutreachLinks(p);
 
             detailPanel.classList.remove("hidden");
+            if (panelClose) panelClose.focus();
         } catch (err) {
             showToast("error", "Error", err.message);
         }
@@ -825,51 +855,181 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Save Edit Form
-    if (btnSaveEdit) {
-        btnSaveEdit.addEventListener("click", async () => {
-            if (!selectedProspectId) return;
+    async function saveCurrentDetailForm(silent = false) {
+        if (!selectedProspectId) return;
 
-            const updatedData = {
-                id: selectedProspectId,
-                nombre: editName.value.trim(),
-                web: editWeb.value.trim(),
-                telefono: editPhone.value.trim(),
-                whatsapp: editWhatsapp.value.trim(),
-                email: editEmail.value.trim(),
-                redes_sociales: editSocials.value.trim(),
-                puntuacion: parseInt(editScore.value) || 0,
-                prioridad: editPriority.value,
-                estado_comercial: editStatus.value,
-                problemas_detectados: editIssues.value.trim()
-            };
+        const updatedData = {
+            id: selectedProspectId,
+            nombre: editName.value.trim(),
+            web: editWeb.value.trim(),
+            telefono: editPhone.value.trim(),
+            whatsapp: editWhatsapp.value.trim(),
+            email: editEmail.value.trim(),
+            redes_sociales: editSocials.value.trim(),
+            puntuacion: parseInt(editScore.value) || 0,
+            prioridad: editPriority.value,
+            estado_comercial: editStatus.value,
+            problemas_detectados: editIssues.value.trim(),
+            mensaje_aprobado: editMsgApproved && editMsgApproved.checked ? 1 : 0,
+            respuesta: editRespuesta ? editRespuesta.value.trim() : "",
+            necesidad_expresada: editNecesidad ? editNecesidad.value.trim() : "",
+            propuesta_enviada: editPropuestaEnviada && editPropuestaEnviada.checked ? 1 : 0,
+            venta_acordada: editVentaAcordada && editVentaAcordada.checked ? 1 : 0,
+            venta_monto: editVentaMonto ? parseFloat(editVentaMonto.value) || 0.0 : 0.0,
+            ingreso_cobrado: editIngresoCobrado ? parseFloat(editIngresoCobrado.value) || 0.0 : 0.0
+        };
 
-            if (activeTab === "frio") updatedData.mensaje_personalizado = editMessage.value.trim();
-            else if (activeTab === "calido") updatedData.mensaje_calido = editMessage.value.trim();
-            else if (activeTab === "seg") updatedData.mensaje_seguimiento = editMessage.value.trim();
+        if (activeTab === "frio") updatedData.mensaje_personalizado = editMessage.value.trim();
+        else if (activeTab === "calido") updatedData.mensaje_calido = editMessage.value.trim();
+        else if (activeTab === "seg") updatedData.mensaje_seguimiento = editMessage.value.trim();
 
-            try {
-                const res = await fetch("/api/prospects/update", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(updatedData)
-                });
+        try {
+            const res = await fetch("/api/prospects/update", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedData)
+            });
 
-                if (!res.ok) throw new Error("Error al guardar cambios");
+            if (!res.ok) throw new Error("Error al guardar cambios");
+            if (!silent) {
                 showToast("success", "Guardado", "Ficha comercial actualizada correctamente.");
-                loadProspects();
-            } catch (err) {
+            }
+            await loadProspects();
+        } catch (err) {
+            if (!silent) {
                 showToast("error", "Error", err.message);
             }
-        });
+        }
     }
 
-    // Close Panel
+    if (btnSaveEdit) {
+        btnSaveEdit.addEventListener("click", () => saveCurrentDetailForm(false));
+    }
+
+    function closeDetailPanel() {
+        if (!detailPanel || detailPanel.classList.contains("hidden")) return;
+        detailPanel.classList.add("hidden");
+        document.querySelectorAll("#prospects-table tbody tr").forEach(tr => tr.classList.remove("selected"));
+        selectedProspectId = null;
+    }
+
+    // Close Panel via Button or Escape Key
     if (panelClose) {
-        panelClose.addEventListener("click", () => {
-            detailPanel.classList.add("hidden");
-            document.querySelectorAll("#prospects-table tbody tr").forEach(tr => tr.classList.remove("selected"));
-            selectedProspectId = null;
+        panelClose.addEventListener("click", () => closeDetailPanel());
+    }
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            if (detailPanel && !detailPanel.classList.contains("hidden")) {
+                closeDetailPanel();
+            }
+            [contactModal, importModal, duplicatesModal, apiModal, quarantineModal].forEach(m => {
+                if (m && !m.classList.contains("hidden")) m.classList.add("hidden");
+            });
+        }
+    });
+
+    // ========================================
+    // Quarantine Modal & Restoration Handlers
+    // ========================================
+    async function loadQuarantineModal() {
+        if (!quarantineListContainer) return;
+        quarantineListContainer.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fa-solid fa-circle-notch fa-spin"></i> Consultando registros en cuarentena...</div>';
+        try {
+            const [resQ, resA] = await Promise.all([
+                fetch("/api/quarantine"),
+                fetch("/api/audit-log")
+            ]);
+            const dataQ = await resQ.json();
+            const dataA = await resA.json();
+            const regs = dataQ.registros || [];
+            const logs = (dataA.cambios || []).filter(c => c.operacion === "SANEAMIENTO_CONTACTO" && !c.revertido);
+
+            let html = "";
+            if (regs.length === 0) {
+                html += '<div style="text-align:center; padding:14px; color: var(--success);"><i class="fa-solid fa-circle-check"></i> No hay registros en cuarentena actualmente.</div>';
+            } else {
+                html += `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
+                    <strong>${regs.length} registro(s) en cuarentena lógica</strong>
+                </div>`;
+                regs.forEach(r => {
+                    html += `
+                        <div style="background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:6px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <div>
+                                <div style="font-weight:600;">#${r.id} — ${escapeHtml(r.nombre)} <span class="badge badge-low">${escapeHtml(r.estado_comercial)}</span></div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Motivo: ${escapeHtml(r.motivo_cuarentena || "Artefacto de prueba")}</div>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-restore-quarantine" data-id="${r.id}" style="padding:6px 10px; font-size:11px;">
+                                <i class="fa-solid fa-rotate-left"></i> Restaurar
+                            </button>
+                        </div>
+                    `;
+                });
+            }
+
+            if (logs.length > 0) {
+                html += `<hr class="panel-divider"><div style="margin: 8px 0;"><strong>Bitácora de Contactos Saneados (${logs.length})</strong></div>`;
+                logs.forEach(l => {
+                    html += `
+                        <div style="background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:6px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <div>
+                                <div style="font-weight:600;">Auditoría #${l.id} (Negocio ID ${l.negocio_id})</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Anterior: <code>${escapeHtml(l.valores_anteriores_json)}</code></div>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-restore-audit" data-audit-id="${l.id}" style="padding:6px 10px; font-size:11px;">
+                                <i class="fa-solid fa-rotate-left"></i> Revertir Cambio
+                            </button>
+                        </div>
+                    `;
+                });
+            }
+
+            quarantineListContainer.innerHTML = html;
+
+            quarantineListContainer.querySelectorAll(".btn-restore-quarantine").forEach(btn => {
+                btn.addEventListener("click", async () => {
+                    const id = parseInt(btn.dataset.id);
+                    const res = await fetch("/api/quarantine/restore", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ids: [id] })
+                    });
+                    if (res.ok) {
+                        showToast("success", "Restaurado", `Negocio #${id} restaurado de cuarentena.`);
+                        await loadProspects();
+                        await loadQuarantineModal();
+                    }
+                });
+            });
+
+            quarantineListContainer.querySelectorAll(".btn-restore-audit").forEach(btn => {
+                btn.addEventListener("click", async () => {
+                    const auditId = parseInt(btn.dataset.auditId);
+                    const res = await fetch("/api/audit-log/restore", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ audit_id: auditId })
+                    });
+                    if (res.ok) {
+                        showToast("success", "Revertido", `Cambio de auditoría #${auditId} revertido.`);
+                        await loadProspects();
+                        await loadQuarantineModal();
+                    }
+                });
+            });
+        } catch (err) {
+            quarantineListContainer.innerHTML = `<div style="color:var(--danger);">${escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    if (btnQuarantineOpen) {
+        btnQuarantineOpen.addEventListener("click", () => {
+            if (quarantineModal) quarantineModal.classList.remove("hidden");
+            loadQuarantineModal();
         });
+    }
+    if (quarantineModalClose) {
+        quarantineModalClose.addEventListener("click", () => quarantineModal.classList.add("hidden"));
     }
 
     // ========================================

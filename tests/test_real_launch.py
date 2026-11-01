@@ -9,6 +9,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+import config
 import launch
 import db
 
@@ -16,6 +17,16 @@ def test_full_real_launch_lifecycle():
     print("\n============================================================")
     print("   PRUEBA REAL DE ARRANQUE Y CICLO DE VIDA - SABUESO 2.0")
     print("============================================================")
+
+    # Si estamos en entorno aislado de pytest, sembrar un registro en la base temporal
+    if config.is_test_environment() and len(db.get_all_negocios()) == 0:
+        db.save_or_update_negocio({
+            "nombre": "Hotel Arranque Aislado",
+            "sector": "Turismo y hospedaje",
+            "municipio": "Puerto Escondido",
+            "prioridad": "high",
+            "estado_comercial": "investigado"
+        })
 
     # Paso 1: Asegurar estado inicial limpio
     print("\n[Paso 1] Asegurando que el puerto 5000 esté libre al inicio...")
@@ -101,11 +112,15 @@ def test_full_real_launch_lifecycle():
     dummy_sock.close()
     time.sleep(0.5)
 
-    # Paso 8: Arranque final limpio para dejar el servicio listo para el usuario
-    print("\n[Paso 8] Arranque final para dejar la aplicación lista...")
+    # Paso 8: Arranque final limpio
+    print("\n[Paso 8] Arranque final para verificar disponibilidad...")
     final_start = launch.start_server(open_browser=False)
     assert final_start is True
-    print("  -> Aplicación Sabueso Digital 2.0 lista y activa en http://127.0.0.1:5000/")
+    if config.is_test_environment():
+        # En pytest, detener el servidor temporal para no retener el archivo en tmp_path
+        launch.stop_server()
+    else:
+        print("  -> Aplicación Sabueso Digital 2.0 lista y activa en http://127.0.0.1:5000/")
     print("\n============================================================")
     print("   ¡TODAS LAS PRUEBAS DE ARRANQUE REAL FUERON EXITOSAS!")
     print("============================================================")

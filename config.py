@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -16,8 +17,38 @@ SECRET_KEY = os.getenv("SECRET_KEY", "sabueso_cidiks_secret_key_default_local")
 
 # Database settings
 DB_PATH_STR = os.getenv("DATABASE_PATH", "data/sabueso_cidiks.db")
-DATABASE_PATH = BASE_DIR / DB_PATH_STR
+PRODUCTION_DATABASE_PATH = (BASE_DIR / DB_PATH_STR).resolve()
+DATABASE_PATH = PRODUCTION_DATABASE_PATH
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+BACKUPS_DIR = BASE_DIR / "data" / "backups"
+BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def is_test_environment() -> bool:
+    """Detecta si el código se está ejecutando bajo pytest o modo de pruebas."""
+    return (
+        os.environ.get("SABUESO_TESTING") == "1"
+        or "pytest" in sys.modules
+        or "PYTEST_CURRENT_TEST" in os.environ
+    )
+
+
+def get_database_path() -> Path:
+    """
+    Resuelve dinámicamente la ruta de SQLite y bloquea de forma estricta
+    cualquier acceso a la base comercial de producción desde pruebas automatizadas.
+    """
+    override = os.environ.get("SABUESO_DB_PATH")
+    target = Path(override).resolve() if override else DATABASE_PATH.resolve()
+
+    if is_test_environment() and target == PRODUCTION_DATABASE_PATH:
+        raise RuntimeError(
+            f"[BLOQUEO DE SEGURIDAD] Las pruebas automatizadas no tienen permitido conectarse "
+            f"a la base de datos comercial de producción ({PRODUCTION_DATABASE_PATH}). "
+            f"Configure SABUESO_DB_PATH hacia una base temporal aislada."
+        )
+    return target
 
 # Screenshots directory
 SCREENSHOTS_DIR = BASE_DIR / "static" / "screenshots"

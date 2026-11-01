@@ -414,13 +414,17 @@ def api_prospects_get():
     search = request.args.get("search")
     sort_col = request.args.get("sort_col", "id")
     sort_dir = request.args.get("sort_dir", "desc")
+    include_quarantine = request.args.get("include_quarantine") == "1"
+    only_quarantine = request.args.get("only_quarantine") == "1"
 
     negocios = db.get_all_negocios(
         filter_status=status,
         filter_priority=priority,
         search_term=search,
         sort_col=sort_col,
-        sort_dir=sort_dir
+        sort_dir=sort_dir,
+        include_quarantine=include_quarantine,
+        only_quarantine=only_quarantine
     )
 
     # Format into frontend-friendly response with normalized and display fields
@@ -473,12 +477,21 @@ def api_prospects_get():
             "mensaje_calido": n.get("mensaje_calido", ""),
             "Mensaje seguimiento": n.get("mensaje_seguimiento", ""),
             "mensaje_seguimiento": n.get("mensaje_seguimiento", ""),
+            "mensaje_aprobado": n.get("mensaje_aprobado", 0),
+            "fecha_aprobacion_mensaje": n.get("fecha_aprobacion_mensaje"),
             "checks": checks,
             "es_favorito": n.get("es_favorito", 0),
             "fecha_contacto_confirmada": n.get("fecha_contacto_confirmada"),
+            "respuesta": n.get("respuesta", ""),
+            "necesidad_expresada": n.get("necesidad_expresada", ""),
             "propuesta_enviada": n.get("propuesta_enviada", 0),
+            "propuesta_monto": n.get("propuesta_monto", 0.0),
             "venta_acordada": n.get("venta_acordada", 0),
-            "ingreso_cobrado": n.get("ingreso_cobrado", 0.0)
+            "venta_monto": n.get("venta_monto", 0.0),
+            "ingreso_cobrado": n.get("ingreso_cobrado", 0.0),
+            "en_cuarentena": n.get("en_cuarentena", 0),
+            "motivo_cuarentena": n.get("motivo_cuarentena", ""),
+            "fecha_cuarentena": n.get("fecha_cuarentena")
         })
 
     return jsonify(formatted)
@@ -611,7 +624,7 @@ def api_audit():
         else:
             priority = "low"
 
-    # Actualizar en SQLite
+    # Actualizar en SQLite (nuevos borradores generados requieren aprobacion humana explicita)
     updated_data = {
         "id": negocio_id,
         "nombre": name,
@@ -622,6 +635,7 @@ def api_audit():
         "mensaje_personalizado": copilot_res.get("mensaje_personalizado", ""),
         "mensaje_calido": copilot_res.get("mensaje_calido", ""),
         "mensaje_seguimiento": copilot_res.get("mensaje_seguimiento", ""),
+        "mensaje_aprobado": 0,
         "checks": {
             "ssl": site_data.get("ssl_valid", False),
             "responsive": site_data.get("is_responsive", False),
@@ -727,6 +741,45 @@ def api_import_rollback():
     deleted_count = importer.rollback_batch(batch_id)
     return jsonify({"success": True, "eliminados": deleted_count})
 
+@app.route("/api/quarantine", methods=["GET"])
+def api_quarantine_list():
+    quarantined = db.get_quarantined_records()
+    return jsonify({
+        "total_en_cuarentena": len(quarantined),
+        "registros": quarantined
+    })
+
+@app.route("/api/quarantine/restore", methods=["POST"])
+def api_quarantine_restore():
+    body = request.json or {}
+    ids = body.get("ids", [])
+    motivo = body.get("motivo", "Restauración manual solicitada por usuario")
+    if not ids or not isinstance(ids, list):
+        return jsonify({"error": "Lista de IDs requerida para restaurar de cuarentena"}), 400
+    res = db.restore_quarantined_records(ids, motivo_restauracion=motivo)
+    return jsonify({"success": True, **res})
+
+@app.route("/api/audit-log", methods=["GET"])
+def api_audit_log_list():
+    negocio_id = request.args.get("negocio_id", type=int)
+    logs = db.get_audit_log(negocio_id=negocio_id)
+    return jsonify({
+        "total_cambios": len(logs),
+        "cambios": logs
+    })
+
+@app.route("/api/audit-log/restore", methods=["POST"])
+def api_audit_log_restore():
+    body = request.json or {}
+    audit_id = body.get("audit_id")
+    if not audit_id:
+        return jsonify({"error": "audit_id requerido"}), 400
+    try:
+        res = db.restore_audit_change(int(audit_id))
+        return jsonify({"success": True, **res})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 @app.route("/api/export", methods=["GET"])
 def api_export():
     fmt = request.args.get("format", "csv").lower()
@@ -748,5 +801,6 @@ def api_export():
 if __name__ == "__main__":
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    db.init_db()
     print(f"[CÍDIKS SALES ENGINE] Iniciando Sabueso Digital 2.0 en http://{FLASK_HOST}:{FLASK_PORT}...")
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)

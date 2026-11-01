@@ -224,11 +224,22 @@ def test_15_graceful_external_module_failure():
 
 # 16. Los reportes separan investigación, conversaciones, ventas e ingresos
 def test_16_reports_separate_investigation_conversations_sales_and_revenue(client):
+    # Insertar 1 prospecto en la base temporal aislada para probar exportación
+    db.save_or_update_negocio({
+        "nombre": "Taller Textil Oaxaca",
+        "sector": "Artesanías",
+        "municipio": "Teotitlán del Valle",
+        "estado_comercial": "investigado"
+    })
     metrics = db.get_dashboard_metrics()
-    assert "investigados" in metrics
-    assert "contactados" in metrics
+    assert "prospectos_investigados" in metrics
+    assert "mensajes_generados" in metrics
+    assert "mensajes_aprobados" in metrics
+    assert "contactos_confirmados" in metrics
+    assert "respuestas_recibidas" in metrics
+    assert "necesidades_confirmadas" in metrics
     assert "propuestas_enviadas" in metrics
-    assert "ventas_confirmadas" in metrics
+    assert "ventas_acordadas" in metrics
     assert "ingresos_cobrados" in metrics
 
     df = db.export_db_to_df()
@@ -239,3 +250,171 @@ def test_16_reports_separate_investigation_conversations_sales_and_revenue(clien
     ]
     for col in expected_cols:
         assert col in df.columns, f"Columna {col} ausente en reporte comercial exportado"
+
+# 17. Bloqueo estricto si una prueba intenta abrir la base de producción
+def test_17_production_db_blocked_in_pytest(monkeypatch):
+    monkeypatch.setenv("SABUESO_DB_PATH", str(config.PRODUCTION_DATABASE_PATH))
+    with pytest.raises(RuntimeError, match="BLOQUEO DE SEGURIDAD"):
+        config.get_database_path()
+    with pytest.raises(RuntimeError, match="BLOQUEO DE SEGURIDAD"):
+        with db.get_db() as _:
+            pass
+
+# 18. Las actualizaciones parciales conservan prioridad, puntuación, estado comercial y checks técnicos
+def test_18_partial_update_preserves_priority_and_checks():
+    created = db.save_or_update_negocio({
+        "nombre": "Hotel Costa Sol",
+        "sector": "Turismo y hospedaje",
+        "municipio": "Puerto Escondido",
+        "web": "https://hotelcostasol.mx",
+        "puntuacion": 92,
+        "prioridad": "critical",
+        "estado_comercial": "auditado",
+        "checks": {"ssl": False, "responsive": False, "whatsapp": True}
+    })
+    nid = created["id"]
+
+    # Actualización parcial 1: cambiar únicamente estado comercial y notas
+    updated_1 = db.save_or_update_negocio({
+        "id": nid,
+        "estado_comercial": "contactado",
+        "notas": "Llamada inicial realizada"
+    })
+    assert updated_1["prioridad"] == "critical", "La prioridad crítica fue sobrescrita silenciosamente"
+    assert updated_1["puntuacion"] == 92, "La puntuación fue sobrescrita silenciosamente"
+    assert updated_1["estado_comercial"] == "contactado"
+    assert updated_1["checks"].get("whatsapp") is True, "Los checks técnicos se perdieron en actualización parcial"
+
+    # Actualización parcial 2: cambiar únicamente notas sin enviar estado_comercial ni prioridad
+    updated_2 = db.save_or_update_negocio({
+        "id": nid,
+        "notas": "Seguimiento programado para el viernes"
+    })
+    assert updated_2["prioridad"] == "critical"
+    assert updated_2["estado_comercial"] == "contactado", "El estado comercial fue sobrescrito silenciosamente"
+    assert updated_2["checks"].get("whatsapp") is True
+
+# 19. Cuarentena lógica no destructiva y restauración reversible
+def test_19_logical_quarantine_and_reversible_restore(client):
+    n1 = db.save_or_update_negocio({
+        "nombre": "Negocio Legítimo Oaxaca",
+        "puntuacion": 80,
+        "prioridad": "high"
+    })
+    n2 = db.save_or_update_negocio({
+        "nombre": "Artefacto de Prueba Pytest",
+        "puntuacion": 75,
+        "prioridad": "high",
+        "venta_acordada": 1,
+        "ingreso_cobrado": 4250.0
+    })
+
+    # Poner n2 en cuarentena
+    q_res = db.quarantine_records([n2["id"]], motivo="Prueba de cuarentena reversible")
+    assert q_res["quarantined_count"] == 1
+
+    # Verificar que n2 no aparece en métricas ni listado comercial normal
+    metrics = db.get_dashboard_metrics()
+    assert metrics["total"] == 1
+    assert metrics["ventas_acordadas"] == 0
+    assert metrics["ingresos_cobrados"] == 0.0
+    assert metrics["en_cuarentena"] == 1
+
+    active_list = db.get_all_negocios()
+    assert len(active_list) == 1
+    assert active_list[0]["id"] == n1["id"]
+
+    # Consultar registros en cuarentena por API
+    res_q = client.get("/api/quarantine")
+    assert res_q.status_code == 200
+    q_data = res_q.get_json()
+    assert q_data["total_en_cuarentena"] == 1
+    assert q_data["registros"][0]["id"] == n2["id"]
+
+    # Restaurar n2 de cuarentena por API
+    res_restore = client.post("/api/quarantine/restore", json={"ids": [n2["id"]]})
+    assert res_restore.status_code == 200
+    assert res_restore.get_json()["restored_count"] == 1
+
+    metrics_after = db.get_dashboard_metrics()
+    assert metrics_after["total"] == 2
+    assert metrics_after["en_cuarentena"] == 0
+
+# 20. Saneamiento de contactos con bitácora de auditoría reversible
+def test_20_contact_sanitization_and_audit_restore(client):
+    biz = db.save_or_update_negocio({
+        "nombre": "Hotel Posada Test",
+        "telefono": "777344 31 796875 15 011719 13",
+        "whatsapp": "Si",
+        "email": "info@hotelposadatest.com"
+    })
+    nid = biz["id"]
+
+    # Sanear teléfono concatenado y whatsapp literal "Si"
+    san_res = db.sanitize_contact_record(
+        negocio_id=nid,
+        updates={
+            "telefono": "",
+            "whatsapp": "",
+            "whatsapp_estado": "declarado_sin_numero",
+            "estado_verificacion": "requiere_verificacion_humana"
+        },
+        motivo="Saneamiento de teléfono concatenado y WhatsApp literal"
+    )
+    assert san_res["changes_logged"] >= 2
+
+    detail_sanitized = db.get_negocio_detail(nid)
+    assert detail_sanitized["telefono"] == ""
+    assert detail_sanitized["whatsapp"] == ""
+    assert detail_sanitized["email"] == "info@hotelposadatest.com"
+
+    # Verificar bitácora de auditoría y restaurar el cambio
+    logs = db.get_audit_log(negocio_id=nid)
+    assert len(logs) >= 1
+    audit_entry = logs[0]
+    prev_vals = json.loads(audit_entry["valores_anteriores_json"])
+    assert prev_vals["telefono"] == "777344 31 796875 15 011719 13"
+    assert prev_vals["whatsapp"] == "Si"
+
+    restore_res = db.restore_audit_change(audit_entry["id"])
+    assert restore_res["restored"] is True
+    detail_restored = db.get_negocio_detail(nid)
+    assert detail_restored["telefono"] == "777344 31 796875 15 011719 13"
+    assert detail_restored["whatsapp"] == "Si"
+
+# 21. Separación estricta de las 9 métricas comerciales
+def test_21_commercial_metrics_strict_separation():
+    # 1. Prospecto con borrador generado pero NO aprobado
+    b1 = db.save_or_update_negocio({
+        "nombre": "Hotel Borrador",
+        "estado_comercial": "investigado",
+        "mensaje_personalizado": "Hola Hotel Borrador...",
+        "mensaje_aprobado": 0
+    })
+    m1 = db.get_dashboard_metrics()
+    assert m1["prospectos_investigados"] == 1
+    assert m1["mensajes_generados"] == 1
+    assert m1["mensajes_aprobados"] == 0
+
+    # 2. Aprobar mensaje explícitamente
+    db.save_or_update_negocio({"id": b1["id"], "mensaje_aprobado": 1})
+    m2 = db.get_dashboard_metrics()
+    assert m2["mensajes_aprobados"] == 1
+
+    # 3. Venta acordada SIN ingreso cobrado no debe sumar ingresos_cobrados
+    db.save_or_update_negocio({
+        "id": b1["id"],
+        "respuesta": "Sí nos interesa la propuesta",
+        "necesidad_expresada": "Motor de reservas directo",
+        "propuesta_enviada": 1,
+        "propuesta_monto": 12000.0,
+        "venta_acordada": 1,
+        "venta_monto": 12000.0,
+        "ingreso_cobrado": 0.0
+    })
+    m3 = db.get_dashboard_metrics()
+    assert m3["respuestas_recibidas"] == 1
+    assert m3["necesidades_confirmadas"] == 1
+    assert m3["propuestas_enviadas"] == 1
+    assert m3["ventas_acordadas"] == 1
+    assert m3["ingresos_cobrados"] == 0.0

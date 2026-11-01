@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sabueso Digital 2.0 — CÍDIKS Sales Engine</title>
     <meta name="description" content="Motor interno de prospección ética B2B para CÍDIKS en Oaxaca.">
     <!-- Google Fonts -->
@@ -148,7 +148,10 @@
                     <h2>Centro de Prospección CÍDIKS</h2>
                     <p>Problema observable → Evidencia → Necesidad → Conversación → Venta real.</p>
                 </div>
-                <div class="header-actions" style="display: flex; gap: 8px;">
+                <div class="header-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" id="btn-quarantine-open" title="Consultar y restaurar registros en cuarentena o bitácora de auditoría">
+                        <i class="fa-solid fa-shield-halved"></i> Cuarentena (<span id="badge-quarantine-count">0</span>)
+                    </button>
                     <button class="btn btn-secondary" id="btn-import-open" title="Importar archivos Excel o CSV históricos">
                         <i class="fa-solid fa-file-import"></i> Importar Excel
                     </button>
@@ -329,10 +332,10 @@
         </main>
 
         <!-- Right Side Panel Details -->
-        <aside class="detail-panel hidden" id="detail-panel">
+        <aside class="detail-panel hidden" id="detail-panel" role="dialog" aria-modal="false" aria-labelledby="detail-panel-title" tabindex="-1">
             <div class="panel-header">
-                <h3>Ficha Comercial del Negocio</h3>
-                <button class="btn-close" id="panel-close"><i class="fa-solid fa-xmark"></i></button>
+                <h3 id="detail-panel-title">Ficha Comercial del Negocio</h3>
+                <button class="btn-close" id="panel-close" aria-label="Cerrar ficha comercial (Escape)" title="Cerrar (Esc)"><i class="fa-solid fa-xmark"></i></button>
             </div>
             
             <div class="panel-body">
@@ -431,7 +434,44 @@
                             <button type="button" class="msg-tab" id="tab-calido" onclick="selectMsgTab('calido')">Mensaje Redes</button>
                             <button type="button" class="msg-tab" id="tab-seg" onclick="selectMsgTab('seg')">Seguimiento</button>
                         </div>
-                        <textarea id="edit-message" rows="7"></textarea>
+                        <textarea id="edit-message" rows="6"></textarea>
+                        <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; cursor: pointer; color: var(--text-main);">
+                            <input type="checkbox" id="edit-msg-approved" style="width: 16px; height: 16px;">
+                            <span><i class="fa-solid fa-user-check" style="color: #10b981;"></i> Mensaje revisado y aprobado por humano (no contar borradores automáticos)</span>
+                        </label>
+                    </div>
+
+                    <!-- Seguimiento Comercial Desglosado -->
+                    <div class="form-group" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                        <label style="margin-bottom: 8px; display: block;"><i class="fa-solid fa-chart-line"></i> Evolución Comercial Real (CÍDIKS)</label>
+                        <div class="form-group" style="margin-bottom: 8px;">
+                            <label for="edit-respuesta" style="font-size: 11px;">Respuesta recibida del negocio</label>
+                            <input type="text" id="edit-respuesta" placeholder="Ej. Pidió información por WhatsApp...">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 8px;">
+                            <label for="edit-necesidad" style="font-size: 11px;">Necesidad confirmada con el cliente</label>
+                            <input type="text" id="edit-necesidad" placeholder="Ej. Página web con motor de reservas directas...">
+                        </div>
+                        <div class="form-row" style="margin-bottom: 8px;">
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                                <input type="checkbox" id="edit-propuesta-enviada" style="width: 15px; height: 15px;">
+                                <span>Propuesta enviada</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                                <input type="checkbox" id="edit-venta-acordada" style="width: 15px; height: 15px;">
+                                <span>Venta acordada</span>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group half">
+                                <label for="edit-venta-monto" style="font-size: 11px;">Monto Acordado (MXN)</label>
+                                <input type="number" id="edit-venta-monto" min="0" step="100" value="0">
+                            </div>
+                            <div class="form-group half">
+                                <label for="edit-ingreso-cobrado" style="font-size: 11px;">Ingreso Cobrado Real (MXN)</label>
+                                <input type="number" id="edit-ingreso-cobrado" min="0" step="100" value="0">
+                            </div>
+                        </div>
                     </div>
 
                     <div class="panel-actions">
@@ -464,6 +504,22 @@
                 </div>
             </div>
         </aside>
+    </div>
+
+    <!-- Modal para Cuarentena Reversible y Bitácora de Auditoría -->
+    <div class="modal hidden" id="quarantine-modal">
+        <div class="modal-content" style="max-width: 720px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-shield-halved"></i> Cuarentena Reversible y Bitácora de Integridad</h3>
+                <button class="btn-close" id="quarantine-modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-info">Registros aislados lógicamente (sin DELETE) para proteger las métricas comerciales reales de CÍDIKS. Puedes consultarlos o restaurarlos en cualquier momento.</p>
+                <div id="quarantine-list-container" style="max-height: 360px; overflow-y: auto;">
+                    <div style="text-align: center; padding: 20px; color: var(--text-muted);">Cargando registros en cuarentena...</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Modal para Confirmación de Contacto Humano -->
