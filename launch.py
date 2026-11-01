@@ -124,12 +124,16 @@ def start_server(open_browser=True):
     if sys.platform == "win32":
         creation_flags = 0x08000000 | 0x00000200
 
+    env = os.environ.copy()
+    env["SABUESO_LOG_TO_FILE"] = "1"
+
     subprocess.Popen(
         [executable, app_script],
         cwd=str(BASE_DIR),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        env=env,
         creationflags=creation_flags
     )
 

@@ -32,7 +32,7 @@ import importer
 
 # Configuración de codificación y registro en log
 try:
-    if sys.stdout is None or not hasattr(sys.stdout, "write"):
+    if os.environ.get("SABUESO_LOG_TO_FILE") == "1" or sys.stdout is None or not hasattr(sys.stdout, "write"):
         _log_f = open(BASE_DIR / "app.log", "a", encoding="utf-8", buffering=1)
         sys.stdout = _log_f
         sys.stderr = _log_f
