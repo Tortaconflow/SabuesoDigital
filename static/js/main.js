@@ -76,15 +76,32 @@ document.addEventListener("DOMContentLoaded", () => {
         if (mobileOverlay) mobileOverlay.classList.remove("show");
     });
 
-    // Stats elements
+    // Stats elements (5 Métricas Separadas Cierre WhatsApp-First)
+    const statDiscovered = document.getElementById("stat-discovered");
     const statTotal = document.getElementById("stat-total");
     const statCritical = document.getElementById("stat-critical");
+    const statWa = document.getElementById("stat-wa");
+    const statWaPending = document.getElementById("stat-wa-pending");
+    const statActionable = document.getElementById("stat-actionable");
+    const statOtherChannels = document.getElementById("stat-other-channels");
     const statContacted = document.getElementById("stat-contacted");
     const statRevenue = document.getElementById("stat-revenue");
+    const microDiscovered = document.getElementById("micro-discovered");
     const microTotal = document.getElementById("micro-total");
     const microCritical = document.getElementById("micro-critical");
+    const microWa = document.getElementById("micro-wa");
+    const microWaPending = document.getElementById("micro-wa-pending");
+    const microActionable = document.getElementById("micro-actionable");
+    const microOtherChannels = document.getElementById("micro-other-channels");
     const microContacted = document.getElementById("micro-contacted");
     const microRevenue = document.getElementById("micro-revenue");
+
+    // WhatsApp-First & Presets
+    const detailWaBadge = document.getElementById("detail-wa-badge");
+    const detailWaFuente = document.getElementById("detail-wa-fuente");
+    const editServicioSugerido = document.getElementById("edit-servicio-sugerido");
+    const btnRegenMsg = document.getElementById("btn-regen-msg");
+    const btnPresetOaxaca = document.getElementById("btn-preset-oaxaca");
 
     // Pipeline step elements
     const stepBuscar = document.getElementById("step-buscar");
@@ -107,6 +124,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const editPriority = document.getElementById("edit-priority");
     const editStatus = document.getElementById("edit-status");
     const editIssues = document.getElementById("edit-issues");
+    const editHipotesis = document.getElementById("edit-hipotesis");
+    const editPregunta = document.getElementById("edit-pregunta");
     const editMessage = document.getElementById("edit-message");
     const editMsgApproved = document.getElementById("edit-msg-approved");
     const editRespuesta = document.getElementById("edit-respuesta");
@@ -137,11 +156,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const linkMail = document.getElementById("link-mail");
     const btnCopyMsg = document.getElementById("btn-copy-msg");
     const btnConfirmContactModal = document.getElementById("btn-confirm-contact-modal");
+    const outreachBlockedWarning = document.getElementById("outreach-blocked-warning");
 
     // Contact Confirm Modal
     const contactModal = document.getElementById("contact-confirm-modal");
     const contactModalClose = document.getElementById("contact-modal-close");
     const contactConfirmForm = document.getElementById("contact-confirm-form");
+    const contactDate = document.getElementById("contact-date");
     const contactChannel = document.getElementById("contact-channel");
     const contactNotes = document.getElementById("contact-notes");
 
@@ -193,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // ========================================
     let prospects = [];
     let favorites = JSON.parse(localStorage.getItem("sabueso_favorites") || "[]");
-    let activeFilter = "all";
+    let activeFilter = "wa_main";
     let sortCol = "score";
     let sortDir = "desc";
     let selectedProspectId = null;
@@ -201,6 +222,18 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentLocation = "";
     let activeTab = "frio";
     let searchTimerInterval = null;
+
+    if (btnPresetOaxaca) {
+        btnPresetOaxaca.addEventListener("click", () => {
+            const cat = document.getElementById("category");
+            const loc = document.getElementById("location");
+            const lim = document.getElementById("limit");
+            if (cat) cat.value = "Turismo y hospedaje";
+            if (loc) loc.value = "Costa de Oaxaca";
+            if (lim) lim.value = "10";
+            showToast("info", "Preset cargado", "Turismo y hospedaje · Costa de Oaxaca (Meta: 10 prospectos).");
+        });
+    }
 
     // Splash Screen
     const splash = document.getElementById("splash-screen");
@@ -311,19 +344,22 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!res.ok) return;
             const m = await res.json();
             
-            const investigados = m.prospectos_investigados ?? m.total ?? 0;
-            const generados = m.mensajes_generados ?? 0;
-            const aprobados = m.mensajes_aprobados ?? 0;
+            const descubiertos = m.negocios_descubiertos ?? m.prospectos_investigados ?? m.total ?? 0;
+            const waComprobados = m.con_whatsapp_comprobado ?? 0;
+            const waPendientes = m.con_whatsapp_pendiente ?? 0;
+            const revisables = m.oportunidades_revisables ?? 0;
             const contactados = m.contactos_confirmados ?? m.contactados ?? 0;
-            const respuestas = m.respuestas_recibidas ?? m.respuestas ?? 0;
-            const necesidades = m.necesidades_confirmadas ?? 0;
-            const propuestas = m.propuestas_enviadas ?? 0;
-            const ventas = m.ventas_acordadas ?? m.ventas_confirmadas ?? 0;
+            const otrosCanales = m.otros_canales ?? 0;
             const cobrados = Number(m.ingresos_cobrados || 0);
             const cuarentena = m.en_cuarentena ?? 0;
 
-            if (statTotal) statTotal.textContent = investigados;
+            if (statDiscovered) statDiscovered.textContent = descubiertos;
+            if (statTotal) statTotal.textContent = descubiertos;
             if (statCritical) statCritical.textContent = m.criticos ?? 0;
+            if (statWa) statWa.textContent = waComprobados;
+            if (statWaPending) statWaPending.textContent = waPendientes;
+            if (statActionable) statActionable.textContent = revisables;
+            if (statOtherChannels) statOtherChannels.textContent = otrosCanales;
             if (statContacted) statContacted.textContent = contactados;
             if (statRevenue) {
                 statRevenue.textContent = `$${cobrados.toLocaleString('es-MX')} MXN`;
@@ -332,23 +368,38 @@ document.addEventListener("DOMContentLoaded", () => {
                 badgeQuarantineCount.textContent = cuarentena;
             }
 
-            if (microTotal) {
-                microTotal.textContent = investigados === 0 
-                    ? "Sin prospectos. Realiza una búsqueda para comenzar." 
-                    : `${investigados} investigados · ${generados} borradores · ${aprobados} aprobados.`;
+            if (microDiscovered) {
+                microDiscovered.textContent = `${descubiertos} prospectos investigados activos.`;
             }
-            if (microCritical) {
-                microCritical.textContent = `${m.criticos || 0} críticos · ${propuestas} propuesta(s) enviada(s).`;
+            if (microWa) {
+                microWa.textContent = `${waComprobados} enlaces o widgets directos comprobados.`;
+            }
+            if (microWaPending) {
+                microWaPending.textContent = `${waPendientes} teléfono(s) en subpágina por verificar.`;
+            }
+            if (microActionable) {
+                microActionable.textContent = `${revisables} prospectos verificados no bloqueados listos para revisión.`;
+            }
+            if (microOtherChannels) {
+                microOtherChannels.textContent = `${otrosCanales} prospectos por teléfono, correo o redes.`;
             }
             if (microContacted) {
-                microContacted.textContent = `${contactados} confirmados · ${respuestas} respuesta(s) · ${necesidades} necesidad(es).`;
+                microContacted.textContent = `${contactados} confirmados manualmente por usuario ($0 cobrado).`;
             }
             if (microRevenue) {
-                microRevenue.textContent = `${ventas} venta(s) acordada(s) · Cobrado: $${cobrados.toLocaleString('es-MX')} MXN.`;
+                microRevenue.textContent = `Cobrado efectivamente: $${cobrados.toLocaleString('es-MX')} MXN.`;
             }
         } catch (err) {
             console.error("Error al actualizar métricas:", err);
         }
+    }
+
+    function isWhatsAppProspect(p) {
+        const st = p.whatsapp_estado || "";
+        if (st === "WHATSAPP_COMPROBADO" || st === "confirmado") return true;
+        if (st === "WHATSAPP_PENDIENTE_VERIFICACION" || st === "declarado") return true;
+        if (p.whatsapp && String(p.whatsapp).trim() !== "" && st !== "SIN_WHATSAPP_COMPROBABLE") return true;
+        return false;
     }
 
     // ========================================
@@ -356,6 +407,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // ========================================
     function renderTable() {
         if (!tableBody) return;
+
+        // Actualizar contadores de bandejas
+        const waCount = prospects.filter(p => isWhatsAppProspect(p)).length;
+        const otherCount = prospects.filter(p => !isWhatsAppProspect(p)).length;
+        const countWaTrayEl = document.getElementById("count-wa-tray");
+        const countOtherTrayEl = document.getElementById("count-other-tray");
+        if (countWaTrayEl) countWaTrayEl.textContent = waCount;
+        if (countOtherTrayEl) countOtherTrayEl.textContent = otherCount;
+
         if (prospects.length === 0) {
             renderEmptyState();
             return;
@@ -363,15 +423,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let filtered = [...prospects];
 
-        // Apply filters
-        if (activeFilter === "top5") {
-            filtered = filtered.sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0)).slice(0, 5);
+        // Apply filters: Bandejas WhatsApp-First
+        if (activeFilter === "wa_main") {
+            filtered = filtered.filter(p => isWhatsAppProspect(p));
+            // Ordenar: primero los comprobados, luego pendientes
+            filtered.sort((a, b) => {
+                const aComp = (a.whatsapp_estado === "WHATSAPP_COMPROBADO" || a.whatsapp_estado === "confirmado") ? 1 : 0;
+                const bComp = (b.whatsapp_estado === "WHATSAPP_COMPROBADO" || b.whatsapp_estado === "confirmado") ? 1 : 0;
+                return bComp - aComp;
+            });
+        } else if (activeFilter === "other_channels") {
+            filtered = filtered.filter(p => !isWhatsAppProspect(p));
+        } else if (activeFilter === "top10" || activeFilter === "top5") {
+            filtered = filtered.sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0)).slice(0, 10);
         } else if (activeFilter === "critical") {
             filtered = filtered.filter(p => p.prioridad === "critical" || (p.puntuacion && p.puntuacion >= 85));
-        } else if (activeFilter === "unaudited") {
-            filtered = filtered.filter(p => p.estado_comercial === "investigado" || !p.puntuacion);
         } else if (activeFilter === "contacted") {
-            filtered = filtered.filter(p => p.estado_comercial === "contactado");
+            filtered = filtered.filter(p => p.estado_comercial === "contactado" || p.fecha_contacto_confirmada);
         } else if (activeFilter === "favorites") {
             filtered = filtered.filter(p => favorites.includes(String(p.id)) || favorites.includes(p.web || p.nombre));
         }
@@ -400,9 +468,9 @@ document.addEventListener("DOMContentLoaded", () => {
         tableBody.innerHTML = "";
 
         if (filtered.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 40px; color: var(--text-muted);">
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 40px; color: var(--text-muted);">
                 <i class="fa-solid fa-filter" style="font-size: 24px; margin-bottom: 8px; display: block;"></i>
-                Ningún prospecto coincide con este filtro.
+                Ningún prospecto en esta bandeja. Selecciona otra bandeja o realiza una búsqueda.
             </td></tr>`;
             return;
         }
@@ -424,6 +492,31 @@ document.addEventListener("DOMContentLoaded", () => {
             const webHtml = webUrl 
                 ? `<a href="${safeUrl(webUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(truncateUrl(webUrl))}</a>` 
                 : `<span class="text-muted">Sin Sitio Web</span>`;
+
+            // Canal / WhatsApp badge
+            let canalBadge = "";
+            const st = p.whatsapp_estado || "";
+            if (st === "WHATSAPP_COMPROBADO" || st === "confirmado" || (p.whatsapp && st !== "SIN_WHATSAPP_COMPROBABLE")) {
+                canalBadge = `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4);"><i class="fa-brands fa-whatsapp"></i> ${escapeHtml(p.whatsapp || "Comprobado")}</span>`;
+            } else if (st === "WHATSAPP_PENDIENTE_VERIFICACION" || st === "declarado") {
+                canalBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);"><i class="fa-solid fa-clock"></i> Pendiente WA</span>`;
+            } else {
+                const tipo = p.tipo_canal_principal || (p.telefono ? "telefono" : (p.email ? "email" : "otros"));
+                canalBadge = `<span class="badge badge-low"><i class="fa-solid fa-${tipo === 'telefono' ? 'phone' : (tipo === 'email' ? 'envelope' : 'share-nodes')}"></i> ${escapeHtml(tipo)}</span>`;
+            }
+
+            // Propuesta CÍDIKS
+            const servMap = {
+                "catalogos": "Catálogos WA",
+                "web": "Presencia Web",
+                "flyers": "Flyers",
+                "redes_sociales": "Redes Sociales",
+                "diseno": "Diseño Gráfico",
+                "investigar_mas": "🔍 Investigar más",
+                "no_contactar": "⛔ No contactar"
+            };
+            const servLabel = servMap[p.servicio_sugerido] || "Catálogos WA";
+            const servHtml = `<span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">${escapeHtml(servLabel)}</span>`;
 
             // SVG Score Gauge
             const gaugeRadius = 14;
@@ -461,8 +554,9 @@ document.addEventListener("DOMContentLoaded", () => {
             tr.innerHTML = `
                 <td><strong>${escapeHtml(p.nombre || p["Nombre del negocio"])}</strong></td>
                 <td>${webHtml}</td>
+                <td>${canalBadge}</td>
+                <td>${servHtml}</td>
                 <td>${scoreGauge}</td>
-                <td><span class="badge ${priorityBadgeClass}">${escapeHtml(p.Prioridad || p.prioridad || "Media")}</span></td>
                 <td>
                     <select class="status-select status-change-trigger" data-id="${p.id}">
                         ${Object.keys(statusMap).map(k => `
@@ -472,7 +566,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </td>
                 <td>
                     <button class="status-select btn-audit-trigger" data-id="${p.id}" style="font-weight: 600;">
-                        ${scoreNum > 0 ? 'Re-auditar' : 'Auditar'}
+                        Ver Ficha
                     </button>
                 </td>
                 <td>
@@ -611,6 +705,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Status Change
     // ========================================
     async function changeProspectStatus(id, newStatus) {
+        const p = prospects.find(x => x.id === id);
+        if (newStatus === "contactado" && p && isProspectBlocked(p, p.mensaje_personalizado)) {
+            showToast("warning", "Acción bloqueada", "No es posible marcar como contactado un prospecto bloqueado (NO CONTACTAR o INVESTIGAR MÁS) desde el flujo de prospección.");
+            renderTable();
+            return;
+        }
+
         try {
             const res = await fetch("/api/prospects/update", {
                 method: "POST",
@@ -655,7 +756,9 @@ document.addEventListener("DOMContentLoaded", () => {
             editScore.value = p.puntuacion || 0;
             editPriority.value = p.prioridad || "medium";
             editStatus.value = p.estado_comercial || "investigado";
-            editIssues.value = p.problemas_detectados || "";
+            editIssues.value = p.observacion_verificada || p.problemas_detectados || "";
+            if (editHipotesis) editHipotesis.value = p.hipotesis_comercial || "";
+            if (editPregunta) editPregunta.value = p.pregunta_comercial || "";
             if (editMsgApproved) editMsgApproved.checked = Boolean(p.mensaje_aprobado);
             if (editRespuesta) editRespuesta.value = p.respuesta || "";
             if (editNecesidad) editNecesidad.value = p.necesidad_expresada || "";
@@ -663,6 +766,27 @@ document.addEventListener("DOMContentLoaded", () => {
             if (editVentaAcordada) editVentaAcordada.checked = Boolean(p.venta_acordada);
             if (editVentaMonto) editVentaMonto.value = p.venta_monto || 0;
             if (editIngresoCobrado) editIngresoCobrado.value = p.ingreso_cobrado || 0;
+
+            // WhatsApp Provenance & Capability CÍDIKS
+            if (detailWaBadge) {
+                const st = p.whatsapp_estado || "";
+                if (st === "WHATSAPP_COMPROBADO" || st === "confirmado" || (p.whatsapp && st !== "SIN_WHATSAPP_COMPROBABLE")) {
+                    detailWaBadge.textContent = "WHATSAPP_COMPROBADO";
+                    detailWaBadge.className = "badge badge-high";
+                } else if (st === "WHATSAPP_PENDIENTE_VERIFICACION" || st === "declarado") {
+                    detailWaBadge.textContent = "WHATSAPP_PENDIENTE_VERIFICACION";
+                    detailWaBadge.className = "badge badge-medium";
+                } else {
+                    detailWaBadge.textContent = "SIN_WHATSAPP_COMPROBABLE";
+                    detailWaBadge.className = "badge badge-low";
+                }
+            }
+            if (detailWaFuente) {
+                detailWaFuente.textContent = p.fuente_whatsapp || (p.contacto_url_origen ? 'URL: ' + truncateUrl(p.contacto_url_origen) : 'No rastreado');
+            }
+            if (editServicioSugerido) {
+                editServicioSugerido.value = p.servicio_sugerido || "catalogos";
+            }
 
             // Message tab
             selectMsgTab(activeTab, p);
@@ -766,13 +890,31 @@ document.addEventListener("DOMContentLoaded", () => {
         updateOutreachLinks(p);
     };
 
+    function isProspectBlocked(p, msgText) {
+        if (!p) return false;
+        if (p.identidad_verificada === 0 || p.identidad_verificada === false) return true;
+        if (p.servicio_sugerido === "no_contactar" || p.servicio_sugerido === "investigar_mas") return true;
+        const m = (msgText || "").trim();
+        if (m.startsWith("[BLOQUEADO") || m.startsWith("[RECOMENDACIÓN")) return true;
+        return false;
+    }
+
     function updateOutreachLinks(p) {
         const msg = editMessage ? editMessage.value : "";
+        const blocked = isProspectBlocked(p, msg);
         const phone = p.whatsapp || p.telefono || "";
         const cleanPhone = phone.replace(/\D/g, "");
 
+        if (outreachBlockedWarning) {
+            outreachBlockedWarning.style.display = blocked ? "block" : "none";
+        }
+        if (btnCopyMsg) {
+            btnCopyMsg.disabled = blocked;
+            btnCopyMsg.style.opacity = blocked ? "0.4" : "1";
+        }
+
         if (linkWa) {
-            if (cleanPhone) {
+            if (cleanPhone && !blocked) {
                 const waDigits = cleanPhone.length === 10 ? "52" + cleanPhone : cleanPhone;
                 linkWa.href = `https://wa.me/${waDigits}?text=${encodeURIComponent(msg)}`;
                 linkWa.style.pointerEvents = "auto";
@@ -786,7 +928,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (linkMail) {
             const email = (p.email || "").split(",")[0].trim();
-            if (email && email.includes("@")) {
+            if (email && email.includes("@") && !blocked) {
                 linkMail.href = `mailto:${encodeURIComponent(email)}?subject=Atención%20digital%20para%20su%20negocio&body=${encodeURIComponent(msg)}`;
                 linkMail.style.pointerEvents = "auto";
                 linkMail.style.opacity = "1";
@@ -796,12 +938,25 @@ document.addEventListener("DOMContentLoaded", () => {
                 linkMail.style.opacity = "0.4";
             }
         }
+
+        if (btnConfirmContactModal) {
+            btnConfirmContactModal.disabled = blocked;
+            btnConfirmContactModal.style.opacity = blocked ? "0.4" : "1";
+            btnConfirmContactModal.title = blocked 
+                ? "No es posible registrar nuevo contacto: prospecto bloqueado o pendiente de investigación." 
+                : "Registrar contacto humano realizado";
+        }
     }
 
     // Copy message to clipboard (Rule: NEVER auto-mark as sent!)
     if (btnCopyMsg) {
         btnCopyMsg.addEventListener("click", () => {
             const msg = editMessage ? editMessage.value : "";
+            const p = prospects.find(x => x.id === selectedProspectId);
+            if (isProspectBlocked(p, msg)) {
+                showToast("error", "Envío bloqueado", "Verifica primero la identidad comercial o elige un enfoque válido antes de copiar.");
+                return;
+            }
             if (!msg) {
                 showToast("warning", "Sin mensaje", "No hay mensaje para copiar.");
                 return;
@@ -820,6 +975,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnConfirmContactModal) {
         btnConfirmContactModal.addEventListener("click", () => {
             if (!selectedProspectId) return;
+            const p = prospects.find(x => x.id === selectedProspectId);
+            const msg = editMessage ? editMessage.value : "";
+            if (isProspectBlocked(p, msg)) {
+                showToast("error", "Acción bloqueada", "No es posible iniciar contacto con un prospecto bloqueado o pendiente de investigación.");
+                return;
+            }
+            if (contactDate) {
+                const now = new Date();
+                const tzOffset = now.getTimezoneOffset() * 60000;
+                contactDate.value = new Date(now - tzOffset).toISOString().slice(0, 16);
+            }
             contactModal.classList.remove("hidden");
         });
     }
@@ -833,12 +999,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const canal = contactChannel ? contactChannel.value : "manual";
             const notas = contactNotes ? contactNotes.value.trim() : "";
+            const fecha_contacto = contactDate ? contactDate.value : "";
 
             try {
                 const res = await fetch("/api/prospects/contact-confirm", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: selectedProspectId, canal, notas })
+                    body: JSON.stringify({ id: selectedProspectId, canal, notas, fecha_contacto })
                 });
 
                 if (!res.ok) throw new Error("No se pudo registrar el contacto");
@@ -870,6 +1037,10 @@ document.addEventListener("DOMContentLoaded", () => {
             prioridad: editPriority.value,
             estado_comercial: editStatus.value,
             problemas_detectados: editIssues.value.trim(),
+            observacion_verificada: editIssues.value.trim(),
+            hipotesis_comercial: editHipotesis ? editHipotesis.value.trim() : "",
+            pregunta_comercial: editPregunta ? editPregunta.value.trim() : "",
+            servicio_sugerido: editServicioSugerido ? editServicioSugerido.value : "catalogos",
             mensaje_aprobado: editMsgApproved && editMsgApproved.checked ? 1 : 0,
             respuesta: editRespuesta ? editRespuesta.value.trim() : "",
             necesidad_expresada: editNecesidad ? editNecesidad.value.trim() : "",
@@ -904,6 +1075,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (btnSaveEdit) {
         btnSaveEdit.addEventListener("click", () => saveCurrentDetailForm(false));
+    }
+
+    if (btnRegenMsg) {
+        btnRegenMsg.addEventListener("click", async () => {
+            if (!selectedProspectId) return;
+            const servicio = editServicioSugerido ? editServicioSugerido.value : "catalogos";
+            btnRegenMsg.disabled = true;
+            btnRegenMsg.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+
+            try {
+                const res = await fetch("/api/copilot/regenerate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: selectedProspectId, servicio_sugerido: servicio })
+                });
+                if (!res.ok) throw new Error("No se pudo regenerar el borrador");
+                const data = await res.json();
+                const p = data.prospect;
+
+                // Update in local state
+                const idx = prospects.findIndex(x => x.id === selectedProspectId);
+                if (idx !== -1) prospects[idx] = p;
+
+                if (editIssues) editIssues.value = p.observacion_verificada || p.problemas_detectados || "";
+                if (editHipotesis) editHipotesis.value = p.hipotesis_comercial || "";
+                if (editPregunta) editPregunta.value = p.pregunta_comercial || "";
+                if (editServicioSugerido) editServicioSugerido.value = p.servicio_sugerido || servicio;
+
+                selectMsgTab(activeTab, p);
+                renderTable();
+                showToast("success", "Borrador actualizado", `Orientado hacia: ${servicio}`);
+            } catch (err) {
+                showToast("error", "Error", err.message);
+            } finally {
+                btnRegenMsg.disabled = false;
+                btnRegenMsg.innerHTML = '<i class="fa-solid fa-rotate"></i> Regenerar';
+            }
+        });
     }
 
     function closeDetailPanel() {

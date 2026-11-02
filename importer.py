@@ -34,12 +34,17 @@ def clean_phone(val) -> str:
     if pd.isna(val) or val is None:
         return ""
     s = str(val).split(".")[0].strip()
+    s = re.sub(r"\b(?:19|20)\d{2}\b", "", s)
     digits = re.sub(r"\D", "", s)
+    if len(digits) < 10 or len(digits) > 14 or len(set(digits)) <= 2:
+        return ""
     if len(digits) == 10:
         return f"+52 {digits[:3]} {digits[3:6]} {digits[6:]}"
     elif len(digits) == 12 and digits.startswith("52"):
         return f"+52 {digits[2:5]} {digits[5:8]} {digits[8:]}"
-    return s if len(digits) >= 7 else ""
+    elif len(digits) == 13 and digits.startswith("521"):
+        return f"+52 {digits[3:6]} {digits[6:9]} {digits[9:]}"
+    return f"+{digits}"
 
 def clean_email(val) -> str:
     if pd.isna(val) or val is None:
@@ -182,6 +187,23 @@ def execute_import(file_path: str, column_mapping: dict = None) -> dict:
             skipped_count += 1
             continue
 
+        if record.get("whatsapp"):
+            record["whatsapp_estado"] = "WHATSAPP_PENDIENTE_VERIFICACION"
+            record["fuente_whatsapp"] = f"importacion_archivo:{path.name}"
+            record["tipo_canal_principal"] = "whatsapp"
+        else:
+            record["whatsapp_estado"] = "SIN_WHATSAPP_COMPROBABLE"
+            record["fuente_whatsapp"] = ""
+            if record.get("telefono"):
+                record["tipo_canal_principal"] = "telefono"
+            elif record.get("email"):
+                record["tipo_canal_principal"] = "email"
+            elif record.get("redes_sociales"):
+                record["tipo_canal_principal"] = "redes_sociales"
+            else:
+                record["tipo_canal_principal"] = "ninguno"
+
+        record["servicio_sugerido"] = "catalogos"
         record["notas"] = f"Lote de importación: {batch_id} | Archivo origen: {path.name}"
         saved = db.save_or_update_negocio(record)
         negocio_id = saved["id"]

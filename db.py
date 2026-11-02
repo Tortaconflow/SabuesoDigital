@@ -164,6 +164,15 @@ def init_db(target_path: Path = None):
         _ensure_column(cursor, "negocios", "mensaje_aprobado", "INTEGER DEFAULT 0")
         _ensure_column(cursor, "negocios", "fecha_aprobacion_mensaje", "TIMESTAMP")
 
+        # Columnas WhatsApp-First MVP y orientación CÍDIKS (aditivas y no destructivas)
+        _ensure_column(cursor, "contactos", "fuente_whatsapp", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "contactos", "tipo_canal_principal", "TEXT DEFAULT 'ninguno'")
+        _ensure_column(cursor, "negocios", "servicio_sugerido", "TEXT DEFAULT 'catalogos'")
+        _ensure_column(cursor, "negocios", "observacion_verificada", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "hipotesis_comercial", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "pregunta_comercial", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "identidad_verificada", "INTEGER DEFAULT 1")
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS auditoria_cambios_datos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -537,7 +546,12 @@ def sanitize_contact_record(negocio_id: int, updated_fields: dict = None, motivo
         cursor.execute("SELECT * FROM contactos WHERE negocio_id = ?", (negocio_id,))
         row = cursor.fetchone()
         if not row:
-            raise ValueError(f"No existe registro en 'contactos' para negocio_id={negocio_id}")
+            cursor.execute("""
+                INSERT INTO contactos (negocio_id, telefono, whatsapp, whatsapp_estado, email, url_origen)
+                VALUES (?, '', '', 'no_verificado', '', '')
+            """, (negocio_id,))
+            cursor.execute("SELECT * FROM contactos WHERE negocio_id = ?", (negocio_id,))
+            row = cursor.fetchone()
 
         prev_contact = dict(row)
         contacto_id = prev_contact["id"]
@@ -637,6 +651,7 @@ def get_all_negocios(
 
     query = """
         SELECT n.*, c.telefono, c.whatsapp, c.whatsapp_estado, c.email, c.estado_verificacion,
+               c.fuente_whatsapp, c.tipo_canal_principal, c.url_origen as contacto_url_origen, c.fecha_comprobacion as contacto_fecha_comprobacion,
                a.primer_contacto_fecha, a.fecha_contacto_confirmada, a.canal, a.respuesta,
                a.necesidad_expresada, a.siguiente_accion, a.fecha_seguimiento,
                a.propuesta_enviada, a.propuesta_monto, a.venta_acordada, a.venta_monto, a.ingreso_cobrado
@@ -679,6 +694,7 @@ def get_negocio_detail(negocio_id):
         cursor = conn.cursor()
         cursor.execute("""
             SELECT n.*, c.telefono, c.whatsapp, c.whatsapp_estado, c.email, c.estado_verificacion,
+                   c.fuente_whatsapp, c.tipo_canal_principal, c.url_origen as contacto_url_origen, c.fecha_comprobacion as contacto_fecha_comprobacion,
                    a.primer_contacto_fecha, a.fecha_contacto_confirmada, a.canal,
                    a.respuesta, a.necesidad_expresada, a.siguiente_accion, a.fecha_seguimiento,
                    a.propuesta_enviada, a.propuesta_monto, a.venta_acordada, a.venta_monto,
@@ -722,6 +738,16 @@ def save_or_update_negocio(data):
             raw_estado = data.get("estado_comercial") if "estado_comercial" in data else data.get("Estado comercial")
             estado_update = normalize_status(raw_estado) if raw_estado is not None else None
 
+            # Validación de backend: No permitir eludir el bloqueo de prospección si está marcado NO_CONTACTAR o INVESTIGAR_MAS
+            if estado_update == "contactado":
+                cursor.execute("SELECT servicio_sugerido, identidad_verificada FROM negocios WHERE id = ?", (negocio_id,))
+                chk = cursor.fetchone()
+                if chk and (chk["servicio_sugerido"] in ("no_contactar", "investigar_mas") or chk["identidad_verificada"] == 0):
+                    cursor.execute("SELECT fecha_contacto_confirmada FROM actividad_comercial WHERE negocio_id = ?", (negocio_id,))
+                    act_chk = cursor.fetchone()
+                    if not (act_chk and act_chk["fecha_contacto_confirmada"]):
+                        estado_update = None  # Rechazar transición desautorizada a contactado
+
             if "checks" in data and isinstance(data["checks"], dict):
                 checks_update = json.dumps(data["checks"])
             elif "checks_json" in data and data["checks_json"] is not None:
@@ -747,6 +773,10 @@ def save_or_update_negocio(data):
             msg_pers_update = data.get("mensaje_personalizado") if "mensaje_personalizado" in data else data.get("Mensaje personalizado")
             msg_cal_update = data.get("mensaje_calido") if "mensaje_calido" in data else data.get("Mensaje calido")
             msg_seg_update = data.get("mensaje_seguimiento") if "mensaje_seguimiento" in data else data.get("Mensaje seguimiento")
+            obs_verif_update = data.get("observacion_verificada") if "observacion_verificada" in data else None
+            hip_com_update = data.get("hipotesis_comercial") if "hipotesis_comercial" in data else None
+            preg_com_update = data.get("pregunta_comercial") if "pregunta_comercial" in data else None
+            id_verif_update = int(bool(data["identidad_verificada"])) if "identidad_verificada" in data and data["identidad_verificada"] is not None else None
 
             cursor.execute("""
                 UPDATE negocios SET
@@ -766,6 +796,11 @@ def save_or_update_negocio(data):
                     checks_json = COALESCE(?, checks_json),
                     es_favorito = COALESCE(?, es_favorito),
                     notas = COALESCE(?, notas),
+                    servicio_sugerido = COALESCE(?, servicio_sugerido),
+                    observacion_verificada = COALESCE(?, observacion_verificada),
+                    hipotesis_comercial = COALESCE(?, hipotesis_comercial),
+                    pregunta_comercial = COALESCE(?, pregunta_comercial),
+                    identidad_verificada = COALESCE(?, identidad_verificada),
                     mensaje_aprobado = COALESCE(?, mensaje_aprobado),
                     fecha_aprobacion_mensaje = CASE
                         WHEN ? = 1 THEN COALESCE(?, fecha_aprobacion_mensaje)
@@ -791,6 +826,11 @@ def save_or_update_negocio(data):
                 checks_update,
                 data.get("es_favorito") if "es_favorito" in data else None,
                 data.get("notas") if "notas" in data else None,
+                data.get("servicio_sugerido") if "servicio_sugerido" in data else None,
+                obs_verif_update,
+                hip_com_update,
+                preg_com_update,
+                id_verif_update,
                 mensaje_aprobado_update,
                 mensaje_aprobado_update,
                 fecha_aprobacion_update,
@@ -804,6 +844,7 @@ def save_or_update_negocio(data):
             estado = normalize_status(data.get("estado_comercial") or data.get("Estado comercial"))
             mensaje_aprobado_init = int(bool(data.get("mensaje_aprobado", 0)))
             fecha_aprobacion_init = datetime.now().isoformat() if mensaje_aprobado_init == 1 else None
+            id_verif_init = int(bool(data.get("identidad_verificada", 1)))
 
             cursor.execute("""
                 INSERT INTO negocios (
@@ -811,8 +852,9 @@ def save_or_update_negocio(data):
                     fuente_descubrimiento, prioridad, estado_comercial, puntuacion,
                     problemas_detectados, mensaje_personalizado, mensaje_calido,
                     mensaje_seguimiento, checks_json, es_favorito, notas,
-                    mensaje_aprobado, fecha_aprobacion_mensaje
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    mensaje_aprobado, fecha_aprobacion_mensaje, servicio_sugerido,
+                    observacion_verificada, hipotesis_comercial, pregunta_comercial, identidad_verificada
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data.get("nombre") or data.get("Nombre del negocio", "Sin Nombre"),
                 data.get("sector", ""),
@@ -832,23 +874,32 @@ def save_or_update_negocio(data):
                 data.get("es_favorito", 0),
                 data.get("notas", ""),
                 mensaje_aprobado_init,
-                fecha_aprobacion_init
+                fecha_aprobacion_init,
+                data.get("servicio_sugerido") or "catalogos",
+                data.get("observacion_verificada", ""),
+                data.get("hipotesis_comercial", ""),
+                data.get("pregunta_comercial", ""),
+                id_verif_init
             ))
             negocio_id = cursor.lastrowid
 
             wa_init = data.get("whatsapp") or data.get("WhatsApp", "")
-            wa_estado_init = data.get("whatsapp_estado") or ("declarado" if wa_init else "no_verificado")
+            wa_estado_init = data.get("whatsapp_estado") or ("confirmado" if wa_init else "no_verificado")
+            fuente_wa_init = data.get("fuente_whatsapp", "")
+            canal_princ_init = data.get("tipo_canal_principal", "whatsapp" if wa_init else "ninguno")
 
             cursor.execute("""
-                INSERT INTO contactos (negocio_id, telefono, whatsapp, whatsapp_estado, email, url_origen)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO contactos (negocio_id, telefono, whatsapp, whatsapp_estado, email, url_origen, fuente_whatsapp, tipo_canal_principal)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 negocio_id,
                 data.get("telefono") or data.get("Teléfono", ""),
                 wa_init,
                 wa_estado_init,
                 data.get("email") or data.get("Email", ""),
-                data.get("web") or data.get("Web", "")
+                data.get("web") or data.get("Web", ""),
+                fuente_wa_init,
+                canal_princ_init
             ))
 
             cursor.execute("INSERT INTO actividad_comercial (negocio_id) VALUES (?)", (negocio_id,))
@@ -858,7 +909,11 @@ def save_or_update_negocio(data):
         wa = data.get("whatsapp") if "whatsapp" in data else data.get("WhatsApp")
         wa_est = data.get("whatsapp_estado") if "whatsapp_estado" in data else None
         email = data.get("email") if "email" in data else data.get("Email")
-        if any(x is not None for x in [tel, wa, wa_est, email]):
+        fuente_wa = data.get("fuente_whatsapp") if "fuente_whatsapp" in data else None
+        canal_princ = data.get("tipo_canal_principal") if "tipo_canal_principal" in data else None
+        url_orig = data.get("url_origen") if "url_origen" in data else (data.get("contacto_url_origen") if "contacto_url_origen" in data else None)
+
+        if any(x is not None for x in [tel, wa, wa_est, email, fuente_wa, canal_princ, url_orig]):
             cursor.execute("SELECT id FROM contactos WHERE negocio_id = ?", (negocio_id,))
             c_row = cursor.fetchone()
             if c_row:
@@ -868,20 +923,25 @@ def save_or_update_negocio(data):
                         whatsapp = COALESCE(?, whatsapp),
                         whatsapp_estado = COALESCE(?, whatsapp_estado),
                         email = COALESCE(?, email),
+                        fuente_whatsapp = COALESCE(?, fuente_whatsapp),
+                        tipo_canal_principal = COALESCE(?, tipo_canal_principal),
+                        url_origen = COALESCE(?, url_origen),
                         fecha_comprobacion = CURRENT_TIMESTAMP
                     WHERE negocio_id = ?
-                """, (tel, wa, wa_est, email, negocio_id))
+                """, (tel, wa, wa_est, email, fuente_wa, canal_princ, url_orig, negocio_id))
             else:
                 cursor.execute("""
-                    INSERT INTO contactos (negocio_id, telefono, whatsapp, whatsapp_estado, email, url_origen, fecha_comprobacion)
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO contactos (negocio_id, telefono, whatsapp, whatsapp_estado, email, url_origen, fuente_whatsapp, tipo_canal_principal, fecha_comprobacion)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, (
                     negocio_id,
                     tel or "",
                     wa or "",
-                    wa_est or ("declarado" if wa else "no_verificado"),
+                    wa_est or ("confirmado" if wa else "no_verificado"),
                     email or "",
-                    data.get("web") or ""
+                    data.get("web") or "",
+                    fuente_wa or "",
+                    canal_princ or ("whatsapp" if wa else "ninguno")
                 ))
 
         # Actualizar registro en 'actividad_comercial' solo si se proporcionaron campos de actividad explícitamente
@@ -955,23 +1015,81 @@ def update_evidencia_estado(evidencia_id, nuevo_estado, revision_humana=1):
         conn.commit()
 
 
-def record_human_contact(negocio_id, canal, notas=""):
-    """Registra contacto manual únicamente tras confirmación humana explícita."""
-    now = datetime.now().isoformat()
+def record_human_contact(negocio_id, canal, notas="", fecha_contacto=None):
+    """
+    Registra contacto manual únicamente tras confirmación humana explícita, conservando fecha real y bitácora.
+    Si el prospecto está bloqueado como NO_CONTACTAR o INVESTIGAR_MAS, se exige una nota de justificación
+    para asentar un hecho histórico real, impidiendo nuevos contactos comerciales desde el flujo de prospección.
+    """
+    effective_date = (fecha_contacto or "").strip() or datetime.now().isoformat()
     with get_db() as conn:
         cursor = conn.cursor()
+        cursor.execute("SELECT id, nombre, estado_comercial, servicio_sugerido, identidad_verificada FROM negocios WHERE id = ?", (negocio_id,))
+        n_prev = cursor.fetchone()
+        if not n_prev:
+            raise ValueError(f"Prospecto con ID {negocio_id} no encontrado.")
+
+        serv = n_prev["servicio_sugerido"] or ""
+        id_verif = n_prev["identidad_verificada"]
+        if serv in ("no_contactar", "investigar_mas") or id_verif == 0:
+            if not (notas and notas.strip()):
+                raise ValueError(
+                    f"No es posible registrar nuevo contacto: el prospecto '{n_prev['nombre']}' está bloqueado ({serv.upper()}). "
+                    f"Para asentar un hecho histórico real se requiere una nota explicativa."
+                )
+
+        prev_estado = n_prev["estado_comercial"] if n_prev else "investigado"
+
+        cursor.execute("SELECT id, primer_contacto_fecha, fecha_contacto_confirmada, canal, notas FROM actividad_comercial WHERE negocio_id = ?", (negocio_id,))
+        a_prev = cursor.fetchone()
+
         cursor.execute("""
             UPDATE negocios SET estado_comercial = 'contactado', updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (negocio_id,))
+
+        if a_prev:
+            act_id = a_prev["id"]
+            prev_act_dict = dict(a_prev)
+            cursor.execute("""
+                UPDATE actividad_comercial SET
+                    fecha_contacto_confirmada = ?,
+                    primer_contacto_fecha = COALESCE(primer_contacto_fecha, ?),
+                    canal = ?,
+                    notas = CASE WHEN COALESCE(notas, '') = '' THEN ? ELSE notas || '\n' || ? END
+                WHERE negocio_id = ?
+            """, (effective_date, effective_date, canal, notas, notas, negocio_id))
+        else:
+            prev_act_dict = {}
+            cursor.execute("""
+                INSERT INTO actividad_comercial (negocio_id, primer_contacto_fecha, fecha_contacto_confirmada, canal, notas)
+                VALUES (?, ?, ?, ?, ?)
+            """, (negocio_id, effective_date, effective_date, canal, notas))
+            act_id = cursor.lastrowid
+
         cursor.execute("""
-            UPDATE actividad_comercial SET
-                fecha_contacto_confirmada = ?,
-                primer_contacto_fecha = COALESCE(primer_contacto_fecha, ?),
-                canal = ?,
-                notas = CASE WHEN notas = '' THEN ? ELSE notas || '\n' || ? END
-            WHERE negocio_id = ?
-        """, (now, now, canal, notas, notas, negocio_id))
+            INSERT INTO auditoria_cambios_datos (
+                tabla_afectada, registro_id, negocio_id, operacion,
+                valores_anteriores_json, valores_nuevos_json, motivo
+            ) VALUES ('actividad_comercial', ?, ?, 'CONFIRMACION_CONTACTO_HUMANO', ?, ?, ?)
+        """, (
+            act_id,
+            negocio_id,
+            json.dumps({
+                "estado_comercial": prev_estado,
+                "fecha_contacto_confirmada": prev_act_dict.get("fecha_contacto_confirmada"),
+                "primer_contacto_fecha": prev_act_dict.get("primer_contacto_fecha"),
+                "canal": prev_act_dict.get("canal", "")
+            }, ensure_ascii=False),
+            json.dumps({
+                "estado_comercial": "contactado",
+                "fecha_contacto_confirmada": effective_date,
+                "primer_contacto_fecha": prev_act_dict.get("primer_contacto_fecha") or effective_date,
+                "canal": canal,
+                "notas": notas
+            }, ensure_ascii=False),
+            f"Confirmación humana de envío por {canal} ({effective_date})"
+        ))
         conn.commit()
 
 
@@ -1007,10 +1125,12 @@ def get_dashboard_metrics():
         """)
         pendientes_verificacion = cursor.fetchone()[0]
 
-        # 2. Mensajes generados (borradores) vs. Mensajes revisados y aprobados por el humano
+        # 2. Mensajes generados (borradores listos, excluyendo bloqueados) vs. Mensajes revisados y aprobados por el humano
         cursor.execute("""
             SELECT COUNT(*) FROM negocios n
             WHERE COALESCE(n.en_cuarentena, 0) = 0
+              AND COALESCE(n.identidad_verificada, 1) = 1
+              AND COALESCE(n.servicio_sugerido, 'catalogos') NOT IN ('no_contactar', 'investigar_mas')
               AND TRIM(COALESCE(n.mensaje_personalizado, '')) != ''
         """)
         mensajes_generados = cursor.fetchone()[0]
@@ -1019,6 +1139,8 @@ def get_dashboard_metrics():
             SELECT COUNT(*) FROM negocios n
             WHERE COALESCE(n.en_cuarentena, 0) = 0
               AND COALESCE(n.mensaje_aprobado, 0) = 1
+              AND COALESCE(n.identidad_verificada, 1) = 1
+              AND COALESCE(n.servicio_sugerido, 'catalogos') NOT IN ('no_contactar', 'investigar_mas')
               AND TRIM(COALESCE(n.mensaje_personalizado, '')) != ''
         """)
         mensajes_aprobados = cursor.fetchone()[0]
@@ -1099,9 +1221,56 @@ def get_dashboard_metrics():
         row_ing = cursor.fetchone()
         ingresos_cobrados = float(row_ing[0]) if row_ing and row_ing[0] is not None else 0.0
 
+        # 9. Cobertura de canales y bandejas WhatsApp-first
+        cursor.execute("""
+            SELECT COUNT(*) FROM negocios n
+            LEFT JOIN contactos c ON c.negocio_id = n.id
+            WHERE COALESCE(n.en_cuarentena, 0) = 0
+              AND (c.whatsapp_estado IN ('WHATSAPP_COMPROBADO', 'confirmado') OR (COALESCE(c.whatsapp, '') != '' AND c.whatsapp_estado NOT IN ('no_verificado', 'SIN_WHATSAPP_COMPROBABLE', 'WHATSAPP_PENDIENTE_VERIFICACION', 'declarado')))
+        """)
+        wa_comprobados = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM negocios n
+            LEFT JOIN contactos c ON c.negocio_id = n.id
+            WHERE COALESCE(n.en_cuarentena, 0) = 0
+              AND c.whatsapp_estado IN ('WHATSAPP_PENDIENTE_VERIFICACION', 'declarado')
+        """)
+        wa_pendientes = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM negocios n
+            LEFT JOIN contactos c ON c.negocio_id = n.id
+            WHERE COALESCE(n.en_cuarentena, 0) = 0
+              AND (COALESCE(c.whatsapp, '') = '' OR c.whatsapp_estado IN ('SIN_WHATSAPP_COMPROBABLE', 'no_verificado'))
+              AND (COALESCE(c.telefono, '') != '' OR COALESCE(c.email, '') != '' OR COALESCE(n.redes_sociales, '') != '')
+        """)
+        otros_canales = cursor.fetchone()[0]
+
+        # 10. Oportunidades revisables (activas, verificadas, no bloqueadas, no contactadas todavía)
+        cursor.execute("""
+            SELECT COUNT(*) FROM negocios n
+            LEFT JOIN actividad_comercial a ON a.negocio_id = n.id
+            WHERE COALESCE(n.en_cuarentena, 0) = 0
+              AND COALESCE(n.identidad_verificada, 1) = 1
+              AND COALESCE(n.servicio_sugerido, 'catalogos') NOT IN ('no_contactar', 'investigar_mas')
+              AND (a.fecha_contacto_confirmada IS NULL OR TRIM(a.fecha_contacto_confirmada) = '')
+        """)
+        oportunidades_revisables = cursor.fetchone()[0]
+
         return {
-            # Indicadores desglosados Fase 3
+            # Indicadores comerciales separados (Cierre WhatsApp-First)
+            "negocios_descubiertos": total,
+            "con_whatsapp_comprobado": wa_comprobados,
+            "con_whatsapp_pendiente": wa_pendientes,
+            "oportunidades_revisables": oportunidades_revisables,
+            "contactos_confirmados": contactos_confirmados,
+            # Indicadores de embudo y canales
             "prospectos_investigados": total,
+            "otros_canales": otros_canales,
+            "con_whatsapp_comprobado": wa_comprobados,
+            "con_whatsapp_pendiente": wa_pendientes,
+            "otros_canales": otros_canales,
             "mensajes_generados": mensajes_generados,
             "mensajes_aprobados": mensajes_aprobados,
             "contactos_confirmados": contactos_confirmados,

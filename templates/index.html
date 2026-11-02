@@ -41,24 +41,28 @@
             </div>
 
             <form id="search-form" class="control-form">
+                <button type="button" class="btn btn-secondary btn-block" id="btn-preset-oaxaca" style="margin-bottom: 14px; font-size: 11px; background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: #10b981;">
+                    <i class="fa-solid fa-umbrella-beach"></i> Cargar Preset: Costa de Oaxaca (10)
+                </button>
+
                 <div class="form-group">
                     <label for="category"><i class="fa-solid fa-briefcase"></i> Categoría del Negocio</label>
-                    <input type="text" id="category" placeholder="Ej. Hoteles, Restaurantes, Clínicas" required value="">
-                    <span class="helper-text">Ejemplos: Hotel boutique, Restaurante tradicional, Clínica dental.</span>
+                    <input type="text" id="category" placeholder="Ej. Hoteles, Hospedaje, Cabañas" required value="Turismo y hospedaje">
+                    <span class="helper-text">Ejemplos: Hoteles, Cabañas, Hostales, Restaurantes.</span>
                 </div>
 
                 <div class="form-group">
                     <label for="location"><i class="fa-solid fa-location-dot"></i> Ubicación</label>
-                    <input type="text" id="location" placeholder="Ej. Oaxaca Centro, Puerto Escondido" required value="">
-                    <span class="helper-text">Ejemplos: Oaxaca, Puerto Escondido, Huatulco, Tabasco.</span>
+                    <input type="text" id="location" placeholder="Ej. Costa de Oaxaca, Puerto Escondido" required value="Costa de Oaxaca">
+                    <span class="helper-text">Ejemplos: Costa de Oaxaca, Puerto Escondido, Mazunte, Huatulco.</span>
                 </div>
 
                 <div class="form-group">
                     <label for="limit"><i class="fa-solid fa-list-ol"></i> Cantidad de Prospectos</label>
                     <select id="limit">
-                        <option value="3">3 prospectos</option>
-                        <option value="5" selected>5 prospectos</option>
-                        <option value="10">10 prospectos</option>
+                        <option value="5">5 prospectos</option>
+                        <option value="10" selected>10 prospectos (Meta de sesión)</option>
+                        <option value="15">15 prospectos</option>
                     </select>
                 </div>
 
@@ -208,38 +212,46 @@
                 </div>
             </section>
 
-            <!-- Stats Bar with Real Data -->
+            <!-- Stats Bar with Real Data (5 Métricas Separadas Cierre WhatsApp-First) -->
             <section class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-icon icon-blue"><i class="fa-solid fa-briefcase"></i></div>
+                    <div class="stat-icon icon-blue"><i class="fa-solid fa-compass"></i></div>
                     <div class="stat-info">
-                        <h3>Prospectos</h3>
-                        <p class="stat-val" id="stat-total">0</p>
-                        <span class="stat-micro" id="micro-total">Cargando base local SQLite...</span>
+                        <h3>Negocios Descubiertos</h3>
+                        <p class="stat-val" id="stat-discovered">0</p>
+                        <span class="stat-micro" id="micro-discovered">Prospectos investigados activos.</span>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon icon-red"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <div class="stat-icon icon-green"><i class="fa-brands fa-whatsapp"></i></div>
                     <div class="stat-info">
-                        <h3>Oportunidades Críticas</h3>
-                        <p class="stat-val" id="stat-critical">0</p>
-                        <span class="stat-micro" id="micro-critical">Puntuación ≥85 o sin web.</span>
+                        <h3>WhatsApp Comprobado</h3>
+                        <p class="stat-val" id="stat-wa">0</p>
+                        <span class="stat-micro" id="micro-wa">Enlace o widget directo comprobado.</span>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon icon-green"><i class="fa-solid fa-user-check"></i></div>
+                    <div class="stat-icon icon-orange" style="color: #f59e0b;"><i class="fa-solid fa-clock"></i></div>
                     <div class="stat-info">
-                        <h3>Contactados</h3>
+                        <h3>WhatsApp Pendiente</h3>
+                        <p class="stat-val" id="stat-wa-pending">0</p>
+                        <span class="stat-micro" id="micro-wa-pending">En subpágina o por verificar.</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon icon-purple" style="color: #8b5cf6;"><i class="fa-solid fa-clipboard-check"></i></div>
+                    <div class="stat-info">
+                        <h3>Oportunidades Revisables</h3>
+                        <p class="stat-val" id="stat-actionable">0</p>
+                        <span class="stat-micro" id="micro-actionable">Listas para aprobación humana.</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon icon-teal" style="color: #06b6d4;"><i class="fa-solid fa-user-check"></i></div>
+                    <div class="stat-info">
+                        <h3>Contactos Confirmados</h3>
                         <p class="stat-val" id="stat-contacted">0</p>
-                        <span class="stat-micro" id="micro-contacted">Confirmados manualmente por una persona.</span>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon icon-purple" style="color: #8b5cf6;"><i class="fa-solid fa-sack-dollar"></i></div>
-                    <div class="stat-info">
-                        <h3>Ingreso Cobrado</h3>
-                        <p class="stat-val" id="stat-revenue">$0 MXN</p>
-                        <span class="stat-micro" id="micro-revenue">Ventas cobradas efectivamente.</span>
+                        <span class="stat-micro" id="micro-contacted">Confirmados por usuario ($0 cobrado).</span>
                     </div>
                 </div>
             </section>
@@ -294,12 +306,12 @@
                     </div>
                 </div>
 
-                <!-- Quick Filter Buttons -->
+                <!-- Quick Filter Buttons: Bandejas WhatsApp-First -->
                 <div class="quick-filters" id="quick-filters">
-                    <button class="filter-chip active" data-filter="all"><i class="fa-solid fa-list"></i> Todos</button>
-                    <button class="filter-chip" data-filter="top5"><i class="fa-solid fa-inbox"></i> Top 5 Recomendados</button>
-                    <button class="filter-chip" data-filter="critical"><i class="fa-solid fa-fire"></i> Alta prioridad</button>
-                    <button class="filter-chip" data-filter="unaudited"><i class="fa-solid fa-clock"></i> Sin auditar</button>
+                    <button class="filter-chip active" data-filter="wa_main"><i class="fa-brands fa-whatsapp" style="color: #10b981;"></i> Bandeja WhatsApp (<span id="count-wa-tray">0</span>)</button>
+                    <button class="filter-chip" data-filter="other_channels"><i class="fa-solid fa-address-book"></i> Otros canales (<span id="count-other-tray">0</span>)</button>
+                    <button class="filter-chip" data-filter="all"><i class="fa-solid fa-list"></i> Todos</button>
+                    <button class="filter-chip" data-filter="top10"><i class="fa-solid fa-inbox"></i> Top 10 Sesión</button>
                     <button class="filter-chip" data-filter="contacted"><i class="fa-solid fa-paper-plane"></i> Contactados</button>
                     <button class="filter-chip" data-filter="favorites"><i class="fa-solid fa-star"></i> Favoritos</button>
                 </div>
@@ -316,10 +328,11 @@
                             <tr>
                                 <th class="sort-col" data-col="nombre">Nombre <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th>Sitio Web</th>
+                                <th class="sort-col" data-col="canal">Canal / WhatsApp <i class="fa-solid fa-sort sort-icon"></i></th>
+                                <th>Propuesta CÍDIKS</th>
                                 <th class="sort-col" data-col="score">Puntuación <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th class="sort-col" data-col="prioridad">Prioridad <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th>Estado</th>
-                                <th>Auditoría</th>
+                                <th>Acción</th>
                                 <th><i class="fa-solid fa-star" title="Favoritos"></i></th>
                             </tr>
                         </thead>
@@ -402,8 +415,18 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="edit-issues">Observación / Problema Observable</label>
+                        <label for="edit-issues"><i class="fa-solid fa-magnifying-glass"></i> Observación Verificada (Hecho Público)</label>
                         <textarea id="edit-issues" rows="2"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-hipotesis"><i class="fa-solid fa-lightbulb"></i> Hipótesis Comercial (Supuesto a Validar)</label>
+                        <textarea id="edit-hipotesis" rows="2" placeholder="Hipótesis comercial basada en el canal observado..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-pregunta"><i class="fa-solid fa-circle-question"></i> Pregunta Exploratoria Adaptada</label>
+                        <input type="text" id="edit-pregunta" placeholder="Pregunta abierta adaptada al canal disponible...">
                     </div>
 
                     <!-- Visual Playwright Evidence Section -->
@@ -423,6 +446,34 @@
                                 <img id="screenshot-img" src="" alt="Captura real del sitio" style="width: 100%; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); max-height: 140px; object-fit: cover;">
                             </a>
                             <span style="font-size: 11px; color: var(--text-muted); display: block; margin-top: 4px;">Haz clic en la imagen para ver la captura completa en alta resolución.</span>
+                        </div>
+                    </div>
+
+                    <!-- Procedencia del Canal y Orientación CÍDIKS -->
+                    <div class="form-group" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                            <span style="font-size: 12px; font-weight: 600;"><i class="fa-brands fa-whatsapp" style="color: #10b981;"></i> Canal Comercial</span>
+                            <span class="badge" id="detail-wa-badge">SIN_WHATSAPP</span>
+                        </div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
+                            Fuente: <span id="detail-wa-fuente">No verificado</span>
+                        </div>
+                        <label for="edit-servicio-sugerido" style="font-size: 11px; margin-bottom: 4px; display: block;">
+                            <i class="fa-solid fa-bullseye"></i> Capacidad CÍDIKS a orientar en la conversación:
+                        </label>
+                        <div style="display: flex; gap: 6px;">
+                            <select id="edit-servicio-sugerido" style="flex: 1; font-size: 12px;">
+                                <option value="catalogos">Catálogos digitales para WhatsApp</option>
+                                <option value="web">Presencia web con reserva directa</option>
+                                <option value="flyers">Flyers y promociones de temporada</option>
+                                <option value="redes_sociales">Contenido digital y redes sociales</option>
+                                <option value="diseno">Diseño gráfico comercial</option>
+                                <option value="investigar_mas">🔍 Investigar más antes de contactar</option>
+                                <option value="no_contactar">⛔ No contactar todavía (Sin verificar)</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary" id="btn-regen-msg" style="font-size: 11px; white-space: nowrap;" title="Regenerar borrador con este enfoque">
+                                <i class="fa-solid fa-rotate"></i> Regenerar
+                            </button>
                         </div>
                     </div>
 
@@ -483,6 +534,9 @@
 
                 <div class="outreach-actions">
                     <h4>Acción de Contacto Humano</h4>
+                    <div id="outreach-blocked-warning" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 8px 10px; border-radius: 6px; font-size: 11px; margin-bottom: 10px;">
+                        <i class="fa-solid fa-triangle-exclamation"></i> <strong>Envío bloqueado:</strong> Verifica primero la identidad comercial o elige un enfoque manual antes de contactar.
+                    </div>
                     <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
                         Copiar el mensaje NO lo marca como enviado. Confirma el contacto únicamente tras enviarlo.
                     </p>
@@ -506,7 +560,7 @@
         </aside>
     </div>
 
-    <!-- Modal para Cuarentena Reversible y Bitácora de Auditoría -->
+    <!-- Modal para Cuarentena Reversible y Bitácora de Integridad -->
     <div class="modal hidden" id="quarantine-modal">
         <div class="modal-content" style="max-width: 720px;">
             <div class="modal-header">
@@ -532,6 +586,10 @@
             <div class="modal-body">
                 <p class="modal-info">Regla de integridad: No se debe registrar como contactado ningún negocio sin acción humana real previa.</p>
                 <form id="contact-confirm-form" class="modal-form">
+                    <div class="form-group">
+                        <label for="contact-date"><i class="fa-solid fa-calendar-check"></i> Fecha y hora real del envío</label>
+                        <input type="datetime-local" id="contact-date" required>
+                    </div>
                     <div class="form-group">
                         <label for="contact-channel"><i class="fa-solid fa-share-nodes"></i> Canal utilizado</label>
                         <select id="contact-channel" required>

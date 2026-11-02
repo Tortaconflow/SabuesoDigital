@@ -91,16 +91,84 @@ EXCLUSION_DOMAINS = [
     'dictionary.com', 'wiktionary.org', 'larousse.', 'collinsdictionary.',
     'oxfordlearnersdictionaries.', 'cambridge.org', 'reverso.net', 'linguee.',
     'significados.com', 'definicion.de', 'definicionyque.es',
-    'conceptodefinicion.de', 'conceptos.de', 'lexico.com'
+    'conceptodefinicion.de', 'conceptos.de', 'lexico.com',
+    'pdfjsviewer', '.pdf', '/plugins/generic/', 'viewer.html?file='
 ]
 
+def normalize_mexican_phone(raw_value):
+    """
+    Normaliza y valida formato de números telefónicos en México (+52).
+    Rechaza años (ej. 1990), números concatenados y cadenas < 10 o > 14 dígitos.
+    Devuelve dict con valid, digits, e164, wa_digits, display.
+    """
+    if not raw_value:
+        return {"valid": False, "raw": "", "digits": "", "e164": "", "wa_digits": "", "display": ""}
+
+    raw_str = str(raw_value).strip()
+    # Eliminar años evidentes (ej. 1990, 2024) y versiones
+    raw_clean = re.sub(r"\b(?:19|20)\d{2}\b", "", raw_str)
+    
+    digits = re.sub(r"\D", "", raw_clean)
+
+    # Validar longitud
+    if not digits or len(digits) < 10 or len(digits) > 14:
+        return {"valid": False, "raw": raw_str, "digits": digits, "e164": "", "wa_digits": "", "display": ""}
+    # Rechazar repetitivos (0000000000, 1111111111, etc.)
+    if len(set(digits)) <= 2:
+        return {"valid": False, "raw": raw_str, "digits": digits, "e164": "", "wa_digits": "", "display": ""}
+
+    # Caso 10 dígitos: Nacional México (ej. 9541240793)
+    if len(digits) == 10:
+        return {
+            "valid": True,
+            "raw": raw_str,
+            "digits": digits,
+            "e164": f"+52{digits}",
+            "wa_digits": f"52{digits}",
+            "display": f"+52 {digits[:3]} {digits[3:6]} {digits[6:]}"
+        }
+
+    # Caso 12 dígitos iniciando con 52 (ej. 529541240793)
+    if len(digits) == 12 and digits.startswith("52"):
+        national = digits[2:]
+        return {
+            "valid": True,
+            "raw": raw_str,
+            "digits": digits,
+            "e164": f"+{digits}",
+            "wa_digits": digits,
+            "display": f"+52 {national[:3]} {national[3:6]} {national[6:]}"
+        }
+
+    # Caso 13 dígitos con prefijo histórico móvil 521 (ej. 5219541240793 -> 529541240793)
+    if len(digits) == 13 and digits.startswith("521"):
+        clean_12 = "52" + digits[3:]
+        national = digits[3:]
+        return {
+            "valid": True,
+            "raw": raw_str,
+            "digits": clean_12,
+            "e164": f"+{clean_12}",
+            "wa_digits": clean_12,
+            "display": f"+52 {national[:3]} {national[3:6]} {national[6:]}"
+        }
+
+    # Caso internacional con '+' o 11-14 dígitos
+    if raw_str.startswith("+") or (11 <= len(digits) <= 14):
+        return {
+            "valid": True,
+            "raw": raw_str,
+            "digits": digits,
+            "e164": f"+{digits}",
+            "wa_digits": digits,
+            "display": f"+{digits}"
+        }
+
+    return {"valid": False, "raw": raw_str, "digits": digits, "e164": "", "wa_digits": "", "display": ""}
+
 def normalize_phone(phone_str):
-    if not phone_str:
-        return ""
-    phone_str = re.sub(r"\b20\d{2}\b", "", str(phone_str))
-    cleaned = re.sub(r"[^\d\+\-\s()]", "", phone_str)
-    cleaned = re.sub(r"[\s\-]+", " ", cleaned).strip()
-    return cleaned
+    norm = normalize_mexican_phone(phone_str)
+    return norm["display"] if norm["valid"] else ""
 
 def clean_name_from_title(title, default_name):
     if not title:
@@ -248,6 +316,249 @@ def search_ddg(query, num_results=5, depth=1):
     return businesses, raw_count
 
 # =============================================
+# WHATSAPP-FIRST EXTRACTOR & CONTACT CLASSIFICATION (NIVEL 1)
+# =============================================
+
+def extract_and_classify_channels(html, page_url):
+    """
+    Analiza un documento HTML para extraer canales comerciales con foco prioritario en WhatsApp.
+    Distingue:
+    - WHATSAPP_COMPROBADO: enlace directo wa.me/api.whatsapp o widget DOM con número verificado.
+    - WHATSAPP_PENDIENTE_VERIFICACION: mención contextual de WhatsApp cerca de un número válido de 10 dígitos.
+    - SIN_WHATSAPP_COMPROBABLE: sin número de WhatsApp rastreable (clasifica canal alternativo).
+    """
+    res = {
+        "whatsapp": "",
+        "whatsapp_estado": "SIN_WHATSAPP_COMPROBABLE",
+        "fuente_whatsapp": "",
+        "url_origen": page_url,
+        "tipo_canal_principal": "ninguno",
+        "telefono": "",
+        "email": "",
+        "redes_sociales": "",
+        "has_forms": False,
+        "has_whatsapp": False
+    }
+
+    if not html:
+        return res
+
+    soup = BeautifulSoup(html, "html.parser")
+    text_content = html
+
+    wa_comprobado_num = None
+    fuente_wa = ""
+
+    # 1. Enlaces explícitos de WhatsApp (href)
+    wa_href_patterns = [
+        r"wa\.me/\+?([0-9\-\s()]{10,16})",
+        r"api\.whatsapp\.com/send(?:\/)?\?(?:[^\"'\s>]*&)?phone=\+?([0-9\-\s()]{10,16})",
+        r"web\.whatsapp\.com/send(?:\/)?\?(?:[^\"'\s>]*&)?phone=\+?([0-9\-\s()]{10,16})",
+        r"whatsapp://send(?:\/)?\?(?:[^\"'\s>]*&)?phone=\+?([0-9\-\s()]{10,16})"
+    ]
+    for pattern in wa_href_patterns:
+        matches = re.findall(pattern, text_content, re.IGNORECASE)
+        for m in matches:
+            norm = normalize_mexican_phone(m)
+            if norm["valid"]:
+                wa_comprobado_num = norm["wa_digits"]
+                fuente_wa = "enlace_directo_wa"
+                break
+        if wa_comprobado_num:
+            break
+
+    # 2. Atributos de widgets y plugins de WhatsApp en el DOM (Joinchat, Click to Chat, qlwapp, etc.)
+    if not wa_comprobado_num:
+        dom_attr_matches = re.findall(r'data-(?:phone|number|whatsapp|wa|tel)=["\']\+?([0-9\-\s()]{10,16})["\']', text_content, re.IGNORECASE)
+        for m in dom_attr_matches:
+            norm = normalize_mexican_phone(m)
+            if norm["valid"]:
+                wa_comprobado_num = norm["wa_digits"]
+                fuente_wa = "widget_whatsapp_dom"
+                break
+
+    # 3. JSON inline de configuración de widgets de WhatsApp en scripts
+    if not wa_comprobado_num:
+        json_wa_matches = re.findall(r'["\'](?:phone|number|whatsapp)["\']\s*:\s*["\']\+?([0-9\-\s()]{10,16})["\']', text_content, re.IGNORECASE)
+        for m in json_wa_matches:
+            norm = normalize_mexican_phone(m)
+            if norm["valid"]:
+                wa_comprobado_num = norm["wa_digits"]
+                fuente_wa = "widget_whatsapp_dom"
+                break
+
+    # 4. WhatsApp pendiente de verificación (Menciones textuales contextuales: "WhatsApp: 954...")
+    wa_pendiente_num = None
+    if not wa_comprobado_num:
+        visible_text = soup.get_text(" ", strip=True)
+        menciones = re.findall(r'(?:whatsapp|whats|wa\.?|reservaciones)\s*(?:al|:|\-)?\s*(\+?[\d\s\-()]{10,16})', visible_text, re.IGNORECASE)
+        for m in menciones:
+            norm = normalize_mexican_phone(m)
+            if norm["valid"]:
+                wa_pendiente_num = norm["wa_digits"]
+                fuente_wa = "mencion_texto_whatsapp"
+                break
+
+    # 5. Teléfonos normales (href="tel:...") y visibles
+    tels_found = []
+    for a in soup.find_all('a', href=True):
+        if a['href'].startswith('tel:'):
+            clean_t = a['href'].replace('tel:', '').strip()
+            norm = normalize_mexican_phone(clean_t)
+            if norm["valid"] and norm["display"] not in tels_found:
+                tels_found.append(norm["display"])
+
+    if not tels_found:
+        visible_text = soup.get_text(" ", strip=True)
+        tels_regex = re.findall(r"\+?[\d\-\s()]{10,16}", visible_text)
+        for t in tels_regex:
+            norm = normalize_mexican_phone(t)
+            if norm["valid"] and norm["display"] not in tels_found:
+                tels_found.append(norm["display"])
+                if len(tels_found) >= 2:
+                    break
+
+    # 6. Correos electrónicos (filtrando dependencias npm/JS)
+    emails_found = []
+    for a in soup.find_all('a', href=True):
+        if a['href'].startswith('mailto:'):
+            m = a['href'].replace('mailto:', '').split('?')[0].strip()
+            if '@' in m and not m.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.js', '.css')):
+                if m not in emails_found:
+                    emails_found.append(m)
+
+    visible_body = soup.get_text(" ", strip=True)
+    email_regex = re.findall(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", visible_body)
+    bad_emails = ('select2', 'sentry', 'wixpress', 'example.com', 'domain.com', 'email.com', 'bootstrap', 'jquery')
+    for e in email_regex:
+        e_lower = e.lower()
+        if not any(bad in e_lower for bad in bad_emails) and not e_lower.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.js', '.css')):
+            if e not in emails_found:
+                emails_found.append(e)
+
+    # 7. Redes sociales reales
+    social_domains = ['facebook.com', 'instagram.com', 'linkedin.com', 'tiktok.com']
+    redes_found = []
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        for s in social_domains:
+            if s in href.lower() and not any(ign in href.lower() for ign in ['sharer', 'intent', 'share', 'plugins', 'tr?id=']):
+                if href not in redes_found:
+                    redes_found.append(href)
+
+    # 8. Formularios
+    has_forms = len(soup.find_all('form')) > 0
+
+    # Clasificación final
+    if wa_comprobado_num:
+        res["whatsapp"] = wa_comprobado_num
+        res["whatsapp_estado"] = "WHATSAPP_COMPROBADO"
+        res["fuente_whatsapp"] = fuente_wa
+        res["tipo_canal_principal"] = "whatsapp"
+        res["has_whatsapp"] = True
+    elif wa_pendiente_num:
+        res["whatsapp"] = wa_pendiente_num
+        res["whatsapp_estado"] = "WHATSAPP_PENDIENTE_VERIFICACION"
+        res["fuente_whatsapp"] = fuente_wa
+        res["tipo_canal_principal"] = "whatsapp"
+        res["has_whatsapp"] = True
+    else:
+        res["whatsapp"] = ""
+        res["whatsapp_estado"] = "SIN_WHATSAPP_COMPROBABLE"
+        res["fuente_whatsapp"] = ""
+        res["has_whatsapp"] = False
+        if tels_found:
+            res["tipo_canal_principal"] = "telefono"
+        elif emails_found:
+            res["tipo_canal_principal"] = "email"
+        elif redes_found:
+            res["tipo_canal_principal"] = "redes_sociales"
+        elif has_forms:
+            res["tipo_canal_principal"] = "formulario"
+        else:
+            res["tipo_canal_principal"] = "ninguno"
+
+    res["telefono"] = ", ".join(tels_found[:2]) if tels_found else ""
+    res["email"] = ", ".join(emails_found[:2]) if emails_found else ""
+    res["redes_sociales"] = ", ".join(redes_found[:2]) if redes_found else ""
+    res["has_forms"] = has_forms
+    return res
+
+
+def discover_contact_channels_level1(base_url, max_subpages=2):
+    """
+    Descubre canales de contacto de Nivel 1:
+    1. Inspecciona la portada.
+    2. Si no tiene WhatsApp comprobado, revisa hasta 2 subpáginas internas de contacto del mismo dominio.
+    """
+    if not base_url or not base_url.startswith(("http://", "https://")):
+        return extract_and_classify_channels("", base_url)
+
+    # 1. Portada
+    html_landing = ""
+    try:
+        resp = security.safe_http_get(base_url, timeout=6.0)
+        if resp.get("ok"):
+            html_landing = resp.get("text", "")
+    except Exception as e:
+        print(f"[DISCOVERY] Error consultando portada {base_url}: {e}")
+
+    landing_res = extract_and_classify_channels(html_landing, base_url)
+
+    # Si ya tiene WhatsApp comprobado, retornar de inmediato (alta velocidad)
+    if landing_res["whatsapp_estado"] == "WHATSAPP_COMPROBADO":
+        return landing_res
+
+    # 2. Si no tiene WhatsApp comprobado, buscar hasta max_subpages enlaces de contacto
+    if html_landing:
+        try:
+            soup = BeautifulSoup(html_landing, "html.parser")
+            parsed_base = urllib.parse.urlparse(base_url)
+            base_domain = parsed_base.netloc.lower()
+
+            candidate_links = []
+            contact_keywords = ["contacto", "contact", "reserv", "ubicacion", "whatsapp", "about"]
+
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                    continue
+                full_url = urllib.parse.urljoin(base_url, href)
+                parsed_full = urllib.parse.urlparse(full_url)
+
+                # Mismo dominio y ruta distinta a la portada
+                if parsed_full.netloc.lower() == base_domain and full_url.rstrip("/") != base_url.rstrip("/"):
+                    path_lower = parsed_full.path.lower()
+                    if any(kw in path_lower for kw in contact_keywords):
+                        if full_url not in candidate_links:
+                            candidate_links.append(full_url)
+                            if len(candidate_links) >= max_subpages:
+                                break
+
+            # Consultar subpáginas candidatas de forma segura
+            for sub_url in candidate_links:
+                try:
+                    sub_resp = security.safe_http_get(sub_url, timeout=5.0)
+                    if sub_resp.get("ok"):
+                        sub_res = extract_and_classify_channels(sub_resp.get("text", ""), sub_url)
+                        if sub_res["whatsapp_estado"] == "WHATSAPP_COMPROBADO":
+                            sub_res["fuente_whatsapp"] = "subpagina_contacto"
+                            return sub_res
+                        if sub_res["whatsapp_estado"] == "WHATSAPP_PENDIENTE_VERIFICACION" and landing_res["whatsapp_estado"] != "WHATSAPP_COMPROBADO":
+                            landing_res = sub_res
+                            landing_res["fuente_whatsapp"] = "subpagina_contacto"
+                        if not landing_res["telefono"] and sub_res["telefono"]:
+                            landing_res["telefono"] = sub_res["telefono"]
+                        if not landing_res["email"] and sub_res["email"]:
+                            landing_res["email"] = sub_res["email"]
+                except Exception as e_sub:
+                    print(f"[DISCOVERY] Error consultando subpágina {sub_url}: {e_sub}")
+        except Exception as e_parse:
+            print(f"[DISCOVERY] Error analizando enlaces de contacto en {base_url}: {e_parse}")
+
+    return landing_res
+
+# =============================================
 # WEBSITE AUDITING (Defensa contra SSRF y OOM)
 # =============================================
 
@@ -304,57 +615,17 @@ def audit_and_scrape_website(url):
     if "wp-content" in text_content:
         data["is_wordpress"] = True
 
-    forms = soup.find_all("form")
-    if len(forms) > 0:
-        data["has_forms"] = True
-
-    # Redes sociales reales (excluyendo plugins/sharer)
-    social_patterns = [
-        r"facebook\.com/(?!sharer|tr|plugins|dialog)[a-zA-Z0-9_\-\.]+",
-        r"instagram\.com/[a-zA-Z0-9_\-\.]+",
-        r"linkedin\.com/company/[a-zA-Z0-9_\-\.]+"
-    ]
-    redes = []
-    for pattern in social_patterns:
-        found = re.findall(pattern, text_content, re.IGNORECASE)
-        if found:
-            redes.extend(found)
-    data["redes_sociales"] = list(set(redes))
-
-    # WhatsApp
-    wa_links = re.findall(r"wa\.me/([0-9]+)", text_content)
-    wa_api = re.findall(r"api\.whatsapp\.com/send\?phone=([0-9]+)", text_content)
-    todos_wa = list(set(wa_links + wa_api))
-
-    if todos_wa or "whatsapp" in text_content.lower():
-        data["has_whatsapp"] = True
-        data["whatsapp_numeros"] = todos_wa
-
-    # Emails desde texto visible y mailto:
-    emails_mailto = []
-    for a in soup.find_all('a', href=True):
-        if a['href'].startswith('mailto:'):
-            clean_m = a['href'].replace('mailto:', '').split('?')[0].strip()
-            if '@' in clean_m:
-                emails_mailto.append(clean_m)
-
-    emails_regex = re.findall(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", visible_body_text)
-    all_emails = [e for e in set(emails_mailto + emails_regex) if not e.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.js', '.css'))]
-    data["emails"] = all_emails[:3]
-
-    # Teléfonos desde enlaces tel: y texto visible
-    tels_found = []
-    for a in soup.find_all('a', href=True):
-        if a['href'].startswith('tel:'):
-            clean_t = a['href'].replace('tel:', '').strip()
-            tels_found.append(clean_t)
-
-    tels_regex = re.findall(r"\+?[\d\-\s()]{8,15}", visible_body_text)
-    for tel in tels_regex:
-        digits = re.sub(r"\D", "", tel)
-        if 8 <= len(digits) <= 12 and not digits.startswith("000"):
-            tels_found.append(tel.strip())
-    data["telefonos"] = list(set(tels_found))[:3]
+    # Extracción unificada y clasificada de canales (WhatsApp-first)
+    channel_info = extract_and_classify_channels(text_content, url)
+    data["has_whatsapp"] = channel_info["has_whatsapp"]
+    data["whatsapp_numeros"] = [channel_info["whatsapp"]] if channel_info["whatsapp"] else []
+    data["whatsapp_estado"] = channel_info["whatsapp_estado"]
+    data["fuente_whatsapp"] = channel_info["fuente_whatsapp"]
+    data["tipo_canal_principal"] = channel_info["tipo_canal_principal"]
+    data["has_forms"] = channel_info["has_forms"]
+    data["telefonos"] = [t.strip() for t in channel_info["telefono"].split(",") if t.strip()]
+    data["emails"] = [e.strip() for e in channel_info["email"].split(",") if e.strip()]
+    data["redes_sociales"] = [r.strip() for r in channel_info["redes_sociales"].split(",") if r.strip()]
 
     return data
 
@@ -480,6 +751,16 @@ def api_prospects_get():
             "mensaje_aprobado": n.get("mensaje_aprobado", 0),
             "fecha_aprobacion_mensaje": n.get("fecha_aprobacion_mensaje"),
             "checks": checks,
+            "whatsapp_estado": n.get("whatsapp_estado") or ("WHATSAPP_COMPROBADO" if n.get("whatsapp") else "SIN_WHATSAPP_COMPROBABLE"),
+            "fuente_whatsapp": n.get("fuente_whatsapp") or "",
+            "tipo_canal_principal": n.get("tipo_canal_principal") or ("whatsapp" if n.get("whatsapp") else "ninguno"),
+            "servicio_sugerido": n.get("servicio_sugerido") or "catalogos",
+            "observacion_verificada": n.get("observacion_verificada") or "",
+            "hipotesis_comercial": n.get("hipotesis_comercial") or "",
+            "pregunta_comercial": n.get("pregunta_comercial") or "",
+            "identidad_verificada": n.get("identidad_verificada") if n.get("identidad_verificada") is not None else 1,
+            "contacto_url_origen": n.get("contacto_url_origen") or "",
+            "contacto_fecha_comprobacion": n.get("contacto_fecha_comprobacion") or "",
             "es_favorito": n.get("es_favorito", 0),
             "fecha_contacto_confirmada": n.get("fecha_contacto_confirmada"),
             "respuesta": n.get("respuesta", ""),
@@ -524,17 +805,10 @@ def api_search():
     }
 
     businesses = []
-    serpapi_key = CONFIG.get("serpapi_key", "")
+    use_paid_apis = bool(body.get("use_paid_apis", False))
+    serpapi_key = CONFIG.get("serpapi_key", "") if use_paid_apis else ""
 
-    if serpapi_key:
-        try:
-            businesses, raw = search_serpapi(query, serpapi_key, limit, depth)
-            debug_info["motor_usado"] = "serpapi"
-            debug_info["resultados_raw"] = raw
-        except Exception as e:
-            debug_info["error"] = f"SerpAPI fallo: {str(e)}"
-
-    if not businesses and DDGS_AVAILABLE:
+    if DDGS_AVAILABLE and not use_paid_apis:
         try:
             ddg_query = f"{category} en {location}"
             businesses, raw = search_ddg(ddg_query, limit, depth)
@@ -543,15 +817,103 @@ def api_search():
         except Exception as e:
             debug_info["error"] = f"DuckDuckGo fallo: {str(e)}"
 
+    if not businesses and serpapi_key:
+        try:
+            businesses, raw = search_serpapi(query, serpapi_key, limit, depth)
+            debug_info["motor_usado"] = "serpapi"
+            debug_info["resultados_raw"] = raw
+        except Exception as e:
+            debug_info["error"] = f"SerpAPI fallo: {str(e)}"
+
     debug_info["resultados_filtrados"] = len(businesses)
 
-    # Guardar prospectos en SQLite y sync legacy
-    saved_prospects = []
+    # Obtener dominios y nombres de negocios ya existentes / contactados para no duplicar ni alterar seguimientos
+    existing_negocios = db.get_all_negocios(include_quarantine=False)
+    existing_domains = set()
+    contacted_domains = set()
+    for ex in existing_negocios:
+        dom = copilot.extract_domain_clean(ex.get("web") or "")
+        if dom:
+            existing_domains.add(dom)
+            if ex.get("estado_comercial") == "contactado" or ex.get("fecha_contacto_confirmada"):
+                contacted_domains.add(dom)
+
+    # Filtrar enlaces a archivos, visores de PDFs o negocios previamente contactados/registrados
+    valid_businesses = []
+    excluded_existing = 0
     for b in businesses:
+        u = (b.get("web") or "").lower()
+        if any(ign in u for ign in ['.pdf', 'pdfjsviewer', '/plugins/generic/', 'viewer.html?file=']):
+            continue
+        dom = copilot.extract_domain_clean(u)
+        if dom and (dom in contacted_domains or dom in existing_domains):
+            excluded_existing += 1
+            continue
+        valid_businesses.append(b)
+
+    debug_info["excluidos_existentes_o_contactados"] = excluded_existing
+
+    # Guardar prospectos en SQLite clasificando canales WhatsApp-first (Nivel 0 y 1)
+    saved_prospects = []
+    wa_comp_count = 0
+    wa_pend_count = 0
+    otros_count = 0
+
+    for b in valid_businesses:
         b["sector"] = category
         b["municipio"] = location
+
+        url = b.get("web", "").strip()
+        # Nivel 1: Descubrimiento de canales sin auditoría pesada
+        if url:
+            channel_info = discover_contact_channels_level1(url, max_subpages=2)
+            b["whatsapp"] = channel_info["whatsapp"]
+            b["whatsapp_estado"] = channel_info["whatsapp_estado"]
+            b["fuente_whatsapp"] = channel_info["fuente_whatsapp"]
+            b["tipo_canal_principal"] = channel_info["tipo_canal_principal"]
+            b["url_origen"] = channel_info["url_origen"]
+            if channel_info["telefono"] and not b.get("telefono"):
+                b["telefono"] = channel_info["telefono"]
+            if channel_info["email"] and not b.get("email"):
+                b["email"] = channel_info["email"]
+            if channel_info["redes_sociales"] and not b.get("redes_sociales"):
+                b["redes_sociales"] = channel_info["redes_sociales"]
+        else:
+            b["whatsapp_estado"] = "SIN_WHATSAPP_COMPROBABLE"
+            b["tipo_canal_principal"] = "redes_sociales" if b.get("redes_sociales") else "ninguno"
+
+        # Conteo para diagnóstico
+        st = b.get("whatsapp_estado")
+        if st == "WHATSAPP_COMPROBADO":
+            wa_comp_count += 1
+        elif st == "WHATSAPP_PENDIENTE_VERIFICACION":
+            wa_pend_count += 1
+        else:
+            otros_count += 1
+
+        # Generar borrador comercial inicial conversacional con CÍDIKS Copilot
+        copilot_res = copilot.generate_cidiks_messages(
+            prospect=b,
+            evidencias=[],
+            use_ai=False
+        )
+        b["mensaje_personalizado"] = copilot_res.get("mensaje_personalizado", "")
+        b["mensaje_calido"] = copilot_res.get("mensaje_calido", "")
+        b["mensaje_seguimiento"] = copilot_res.get("mensaje_seguimiento", "")
+        b["servicio_sugerido"] = copilot_res.get("servicio_sugerido", "catalogos")
+        b["observacion_verificada"] = copilot_res.get("observacion_verificada", "")
+        b["hipotesis_comercial"] = copilot_res.get("hipotesis_comercial", "")
+        b["pregunta_comercial"] = copilot_res.get("pregunta_comercial", "")
+        b["identidad_verificada"] = 1 if copilot_res.get("identidad_verificada", True) else 0
+        b["problemas_detectados"] = copilot_res.get("observacion_verificada", "")
+        b["mensaje_aprobado"] = 0
+
         saved = db.save_or_update_negocio(b)
         saved_prospects.append(saved)
+
+    debug_info["con_whatsapp_comprobado"] = wa_comp_count
+    debug_info["con_whatsapp_pendiente"] = wa_pend_count
+    debug_info["otros_canales"] = otros_count
 
     return jsonify({
         "prospects": saved_prospects,
@@ -651,6 +1013,14 @@ def api_audit():
         updated_data["email"] = ", ".join(site_data["emails"])
     if site_data.get("whatsapp_numeros"):
         updated_data["whatsapp"] = site_data["whatsapp_numeros"][0]
+    if site_data.get("whatsapp_estado"):
+        updated_data["whatsapp_estado"] = site_data["whatsapp_estado"]
+    if site_data.get("fuente_whatsapp"):
+        updated_data["fuente_whatsapp"] = site_data["fuente_whatsapp"]
+    if site_data.get("tipo_canal_principal"):
+        updated_data["tipo_canal_principal"] = site_data["tipo_canal_principal"]
+    if copilot_res.get("servicio_sugerido"):
+        updated_data["servicio_sugerido"] = copilot_res["servicio_sugerido"]
 
     updated_detail = db.save_or_update_negocio(updated_data)
     return jsonify(updated_detail)
@@ -691,12 +1061,50 @@ def api_contact_confirm():
     negocio_id = body.get("id")
     canal = body.get("canal", "manual")
     notas = body.get("notas", "")
+    fecha_contacto = body.get("fecha_contacto")
 
     if not negocio_id:
         return jsonify({"error": "ID de prospecto requerido"}), 400
 
-    db.record_human_contact(negocio_id, canal, notas)
+    db.record_human_contact(negocio_id, canal, notas, fecha_contacto=fecha_contacto)
     return jsonify({"success": True, "message": "Contacto confirmado manualmente"})
+
+@app.route("/api/copilot/regenerate", methods=["POST"])
+def api_copilot_regenerate():
+    body = request.json or {}
+    negocio_id = body.get("id")
+    servicio_sugerido = body.get("servicio_sugerido", "catalogos")
+
+    if not negocio_id:
+        return jsonify({"error": "ID de prospecto requerido"}), 400
+
+    prospect = db.get_negocio_detail(negocio_id)
+    if not prospect:
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+
+    prospect["servicio_sugerido"] = servicio_sugerido
+    prospect["_force_explicit"] = True
+    copilot_res = copilot.generate_cidiks_messages(
+        prospect=prospect,
+        evidencias=prospect.get("evidencias", []),
+        use_ai=bool(body.get("use_ai", False)),
+        api_key=CONFIG.get("gemini_api_key")
+    )
+
+    updated = db.save_or_update_negocio({
+        "id": negocio_id,
+        "servicio_sugerido": copilot_res.get("servicio_sugerido", servicio_sugerido),
+        "observacion_verificada": copilot_res.get("observacion_verificada", ""),
+        "hipotesis_comercial": copilot_res.get("hipotesis_comercial", ""),
+        "pregunta_comercial": copilot_res.get("pregunta_comercial", ""),
+        "identidad_verificada": 1 if copilot_res.get("identidad_verificada", True) else 0,
+        "mensaje_personalizado": copilot_res.get("mensaje_personalizado", ""),
+        "mensaje_calido": copilot_res.get("mensaje_calido", ""),
+        "mensaje_seguimiento": copilot_res.get("mensaje_seguimiento", ""),
+        "mensaje_aprobado": 0
+    })
+
+    return jsonify({"success": True, "prospect": updated, "copilot": copilot_res})
 
 @app.route("/api/duplicates", methods=["GET"])
 def api_duplicates():
