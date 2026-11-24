@@ -30,3 +30,7 @@ Este documento registra de manera transparente las funciones operativas concluid
    - Integrar notificaciones nativas de Windows (mediante `win10toast` o PowerShell) cuando haya seguimientos comerciales con fecha para el día actual.
 4. **Respaldo Automatizado de SQLite:**
    - Crear una tarea periódica que copie semanalmente `sabueso_cidiks.db` a una carpeta de respaldos comprimida con fecha.
+5. **Sabueso Móvil — Fase 2 (búsqueda desde el celular):**
+   - La búsqueda automática y la auditoría web necesitan un servidor: Safari no puede leer sitios de terceros por sí mismo (CORS) ni correr Playwright.
+   - Opción recomendada: un servicio pequeño y sin estado (por ejemplo, Cloudflare Worker gratuito) que reciba «giro + municipio», consulte el buscador y devuelva negocios con teléfono/WhatsApp detectado, protegido con una clave personal. No guardaría datos de clientes.
+   - Mientras tanto, desde el celular se busca en Google Maps/Facebook y se agrega el negocio a mano con su mensaje CÍDIKS.

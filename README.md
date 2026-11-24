@@ -41,6 +41,20 @@ python app.py
 
 ---
 
+## Sabueso Móvil (iPhone, sin internet)
+
+Para trabajar desde el celular cuando estás fuera o la PC no tiene internet. Es una app web instalable que vive en `docs/` y se publica gratis con GitHub Pages. Los datos se guardan **solo en el iPhone**; la PC y el celular se pasan archivos, sin servidores de por medio.
+
+1. **Publicar una vez:** GitHub → *Settings → Pages → Deploy from a branch* → carpeta `/docs`. Queda en `https://tortaconflow.github.io/SabuesoDigital/`.
+2. **Instalar:** ábrela en Safari → Compartir → *Agregar a pantalla de inicio*.
+3. **PC → celular:** en Sabueso PC, botón **Celular → Descargar archivo para el celular**. En el iPhone: pestaña **PC → Elegir archivo de la PC**.
+4. **En la calle:** lista y filtros, botón de WhatsApp con el mensaje listo, confirmar contacto, CRM (respuesta, seguimiento, propuesta, venta y cobro por separado), notas y alta de negocios encontrados en Maps o Facebook.
+5. **Celular → PC:** en el iPhone, **Enviar avances** (menú Compartir). En Sabueso PC: **Celular → Importar avances del celular**. Se hace respaldo de SQLite antes de aplicar, y reimportar el mismo archivo no duplica nada.
+
+Detalles en [`docs/LEEME.md`](docs/LEEME.md). La búsqueda automática con auditoría web sigue siendo exclusiva de la PC (ver `PENDIENTES.md`).
+
+---
+
 ## Estructura del Proyecto
 
 ```text
@@ -52,6 +66,7 @@ prospector/
 ├── evidence_engine.py      # Motor de comprobación visual con Playwright
 ├── copilot.py              # Copiloto de redacción ética CÍDIKS (Modalidades A y B)
 ├── importer.py             # Importador con vista previa, validación y rollback
+├── movil_sync.py           # Sincronización por archivo con Sabueso Móvil (iPhone)
 ├── iniciar_sabueso.bat     # Lanzador autónomo con detección de puerto 5000
 ├── create_shortcut.py      # Generador del acceso directo .lnk en el Escritorio
 ├── requirements.txt        # Dependencias fijadas del proyecto
@@ -63,8 +78,10 @@ prospector/
 │   └── screenshots/        # Capturas de evidencia visual Playwright
 ├── templates/
 │   └── index.html          # Panel de control comercial y CRM
+├── docs/                   # Sabueso Móvil: PWA para iPhone (GitHub Pages)
 └── tests/
-    └── test_acceptance.py  # 16 Pruebas de aceptación obligatorias
+    ├── test_acceptance.py  # 16 Pruebas de aceptación obligatorias
+    └── test_movil_sync.py  # Sincronización PC ⇄ celular
 ```
 
 ---

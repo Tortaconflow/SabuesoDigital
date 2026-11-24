@@ -10,7 +10,7 @@ import warnings
 from pathlib import Path
 from bs4 import BeautifulSoup
 import pandas as pd
-from flask import Flask, request, jsonify, render_template, send_from_directory, send_file
+from flask import Flask, request, jsonify, render_template, send_from_directory, send_file, Response
 from flask_cors import CORS
 
 from config import (
@@ -29,6 +29,7 @@ import db
 import evidence_engine
 import copilot
 import importer
+import movil_sync
 
 # Configuración de codificación y registro en log
 try:
@@ -1205,6 +1206,61 @@ def api_export():
         out_file = BASE_DIR / f"prospectos_cidiks_{timestamp}.csv"
         df.to_csv(out_file, index=False, encoding="utf-8-sig")
         return send_file(str(out_file), as_attachment=True, download_name=f"prospectos_cidiks_{timestamp}.csv")
+
+# =========================================================
+# SABUESO MÓVIL (iPhone): sincronización por archivo, sin internet
+# =========================================================
+MAX_MOVIL_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+@app.route("/api/movil/export", methods=["GET"])
+def api_movil_export():
+    """Descarga el paquete JSON para cargar en Sabueso Móvil (no deja copias en disco)."""
+    paquete = movil_sync.build_mobile_export()
+    if not paquete["prospectos"]:
+        return jsonify({"error": "No hay prospectos activos para enviar al celular"}), 400
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    body = json.dumps(paquete, ensure_ascii=False, indent=1)
+    return Response(
+        body.encode("utf-8"),
+        mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="sabueso_para_celular_{timestamp}.json"'}
+    )
+
+
+@app.route("/api/movil/import", methods=["POST"])
+def api_movil_import():
+    """Aplica el archivo de avances generado en Sabueso Móvil, con respaldo previo de SQLite."""
+    if request.content_length and request.content_length > MAX_MOVIL_UPLOAD_BYTES:
+        return jsonify({"error": "El archivo de avances es demasiado grande (máximo 10 MB)."}), 413
+
+    try:
+        if "file" in request.files:
+            raw = request.files["file"].read(MAX_MOVIL_UPLOAD_BYTES + 1)
+            if len(raw) > MAX_MOVIL_UPLOAD_BYTES:
+                return jsonify({"error": "El archivo de avances es demasiado grande (máximo 10 MB)."}), 413
+            payload = json.loads(raw.decode("utf-8-sig"))
+        else:
+            payload = request.get_json(silent=False)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return jsonify({"error": "El archivo no es un JSON válido de Sabueso Móvil."}), 400
+
+    try:
+        pendientes = movil_sync.count_pending_events(payload)
+    except movil_sync.EventoInvalido as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    respaldo = {}
+    if pendientes:
+        try:
+            respaldo = db.backup_and_verify_db(label="antes_de_movil")
+        except Exception as exc:
+            return jsonify({"error": f"No se aplicaron cambios: falló el respaldo previo de la base ({exc})."}), 500
+
+    resumen = movil_sync.apply_mobile_events(payload)
+    resumen["respaldo"] = respaldo.get("backup_db_path", "")
+    return jsonify({"success": True, "resumen": resumen})
+
 
 if __name__ == "__main__":
     import urllib3

@@ -32,3 +32,12 @@ Este documento resume las correcciones de seguridad defensiva aplicadas durante 
 - El archivo `.env` **NUNCA** debe comitearse a repositorios públicos ni compartirse por mensajería.
 - Las capturas generadas por Playwright se guardan localmente en `static/screenshots/` y están excluidas de los respaldos remotos mediante `.gitignore`.
 - La base de datos `data/sabueso_cidiks.db` contiene nombres, teléfonos y notas comerciales privadas de clientes en Oaxaca; debe mantenerse bajo permisos de usuario local en la laptop de trabajo.
+
+---
+
+## 4. Sabueso Móvil (iPhone)
+- El servidor Flask **sigue confinado a `127.0.0.1`**: el celular no se conecta a la PC. Todo viaja en archivos que la persona decide enviar.
+- GitHub Pages solo publica el código de `docs/`; **ningún dato comercial** está en el repositorio ni en el sitio. Los datos viven en IndexedDB del iPhone.
+- `docs/index.html` declara una CSP estricta (`script-src 'self'`, `connect-src 'self'`): la app no puede cargar scripts externos ni enviar datos a otros dominios.
+- La importación en la PC valida formato, versión, tamaño (10 MB), tipos de evento y campos permitidos; hace respaldo verificado de SQLite antes de aplicar cambios y registra cada evento en `movil_sync`.
+- Los archivos `sabueso_para_celular_*.json`, `sabueso_avances_*.json` y los respaldos del celular contienen datos de clientes: compártelos solo hacia tus propias cuentas (tu WhatsApp, tu correo o tu iCloud) y bórralos de chats compartidos.

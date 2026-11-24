@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="#11131f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Sabueso">
+    <meta name="description" content="Sabueso Móvil: prospección y CRM de CÍDIKS en tu iPhone, sin internet.">
+    <title>Sabueso Móvil</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" href="icons/icon-192.png">
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-title">
+            <img src="icons/icon-192.png" alt="" class="topbar-logo">
+            <div>
+                <h1>Sabueso Móvil</h1>
+                <p id="red-estado" class="red-estado">Comprobando conexión…</p>
+            </div>
+        </div>
+    </header>
+
+    <main id="vista" class="vista" aria-live="polite">
+        <p class="cargando">Cargando tus prospectos…</p>
+    </main>
+
+    <section id="ficha" class="ficha oculto" aria-modal="true" role="dialog" aria-labelledby="ficha-titulo"></section>
+    <div id="hoja" class="hoja-fondo oculto"></div>
+
+    <div id="aviso-actualizacion" class="aviso-actualizacion oculto">
+        <span>Hay una versión nueva de Sabueso Móvil.</span>
+        <button type="button" id="btn-recargar" class="btn btn-chico">Actualizar</button>
+    </div>
+
+    <div id="toast" class="toast oculto" role="status"></div>
+
+    <nav class="tabbar" aria-label="Secciones">
+        <button type="button" class="tab activo" data-tab="hoy"><span class="tab-icono" aria-hidden="true">☀︎</span>Hoy</button>
+        <button type="button" class="tab" data-tab="prospectos"><span class="tab-icono" aria-hidden="true">☰</span>Prospectos</button>
+        <button type="button" class="tab" data-tab="agregar"><span class="tab-icono" aria-hidden="true">＋</span>Buscar</button>
+        <button type="button" class="tab" data-tab="sync"><span class="tab-icono" aria-hidden="true">⇅</span>PC</button>
+    </nav>
+
+    <noscript>Sabueso Móvil necesita JavaScript activado en Safari.</noscript>
+    <script src="app.js"></script>
+</body>
+</html>

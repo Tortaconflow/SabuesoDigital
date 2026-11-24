@@ -1,5 +1,21 @@
 # Registro de Cambios: Sabueso Digital 2.0 (CÍDIKS Sales Engine)
 
+## [2.1.0] - 2026-11-24 — Sabueso Móvil (iPhone)
+
+### Nuevo
+- **Sabueso Móvil (`docs/`):** app web instalable para iPhone que funciona sin internet (service worker + IndexedDB). Lista y filtros de prospectos, ficha comercial, botón de WhatsApp con mensaje prellenado, confirmación humana de contacto, CRM (respuesta, necesidad, siguiente paso, fecha de seguimiento, propuesta, venta acordada e ingreso cobrado por separado), notas, alta manual de negocios con copiloto CÍDIKS Modalidad B, atajos de búsqueda a Google Maps/Google/Facebook, respaldo y restauración.
+- **Sincronización por archivo (`movil_sync.py`):** `GET /api/movil/export` genera el paquete para el celular (incluye acuses de eventos aplicados) y `POST /api/movil/import` aplica los avances del celular de forma idempotente (tabla `movil_sync`), con respaldo verificado de SQLite previo.
+- **Botón «Celular» en Sabueso PC** con ventana para descargar el archivo del celular e importar avances, mostrando aplicados, omitidos, errores y posibles duplicados.
+
+### Reglas preservadas
+- El estado `contactado` solo se registra con un evento de confirmación humana; la actualización genérica lo rechaza.
+- Prospectos bloqueados exigen nota para registrar contacto, igual que en la PC.
+- Altas desde el celular que coinciden en teléfono o nombre van a `duplicados_candidatos` (sin fusión automática).
+- Campos no permitidos desde el celular (identidad, prioridad, puntuación, etc.) se rechazan.
+
+### Pruebas
+- `tests/test_movil_sync.py`: 13 pruebas nuevas (exportación, cuarentena, idempotencia, bloqueo, CRM, altas, duplicados, archivos inválidos).
+
 ## [2.0.0] - 2026-10-30
 
 ### Seguridad y Configuración

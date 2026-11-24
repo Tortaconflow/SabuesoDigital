@@ -18,6 +18,11 @@ prospectos_exportados.csv
 ddg_response.html
 *.xlsx
 
+# Archivos de sincronización con Sabueso Móvil (contienen datos de clientes)
+sabueso_para_celular_*.json
+sabueso_avances_*.json
+sabueso_movil_respaldo_*.json
+
 # Evidencia visual y capturas
 screenshots/
 evidencias/

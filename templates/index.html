@@ -170,6 +170,9 @@
                             <i class="fa-solid fa-file-excel"></i> Excel
                         </button>
                     </div>
+                    <button class="btn btn-secondary" id="btn-movil-open" title="Pasar prospectos al iPhone y traer los avances del celular (Sabueso Móvil)">
+                        <i class="fa-solid fa-mobile-screen-button"></i> Celular
+                    </button>
                 </div>
             </header>
 
@@ -635,6 +638,38 @@
                         <i class="fa-solid fa-file-arrow-up"></i> Confirmar e Importar a Base Local
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Sabueso Móvil (sincronización con iPhone por archivo) -->
+    <div class="modal hidden" id="movil-modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-mobile-screen-button"></i> Sabueso Móvil · Sincronizar con el celular</h3>
+                <button class="btn-close" id="movil-modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-info">No necesita internet en la PC. Pasa los archivos al iPhone como prefieras (WhatsApp a ti mismo, correo, Drive o iCloud). Los datos viven en tu celular, no en ningún servidor.</p>
+
+                <div class="form-group">
+                    <label><strong>1. PC → Celular</strong></label>
+                    <p class="modal-info" style="margin: 4px 0 8px;">Descarga tus prospectos activos. En el iPhone: Sabueso Móvil → pestaña «PC» → «Elegir archivo de la PC».</p>
+                    <button type="button" class="btn btn-primary btn-block" id="btn-movil-export">
+                        <i class="fa-solid fa-download"></i> Descargar archivo para el celular
+                    </button>
+                </div>
+
+                <div class="form-group" style="margin-top: 16px;">
+                    <label for="movil-import-file"><strong>2. Celular → PC</strong></label>
+                    <p class="modal-info" style="margin: 4px 0 8px;">Elige el archivo <code>sabueso_avances_….json</code> que generaste en el celular. Antes de aplicar se hace un respaldo de la base. Importar el mismo archivo dos veces no duplica nada.</p>
+                    <input type="file" id="movil-import-file" accept=".json,application/json">
+                    <button type="button" class="btn btn-secondary btn-block" id="btn-movil-import" style="margin-top: 8px;">
+                        <i class="fa-solid fa-file-arrow-up"></i> Importar avances del celular
+                    </button>
+                </div>
+
+                <div id="movil-import-result" style="margin-top: 16px; display: none; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 6px; max-height: 260px; overflow-y: auto;"></div>
             </div>
         </div>
     </div>

@@ -1538,6 +1538,78 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // ========================================
+    // Sabueso Móvil (iPhone): sincronización por archivo
+    // ========================================
+    const movilModal = document.getElementById("movil-modal");
+    const btnMovilOpen = document.getElementById("btn-movil-open");
+    const movilModalClose = document.getElementById("movil-modal-close");
+    const btnMovilExport = document.getElementById("btn-movil-export");
+    const btnMovilImport = document.getElementById("btn-movil-import");
+    const movilImportFile = document.getElementById("movil-import-file");
+    const movilImportResult = document.getElementById("movil-import-result");
+
+    if (btnMovilOpen && movilModal) {
+        btnMovilOpen.addEventListener("click", () => movilModal.classList.remove("hidden"));
+    }
+    if (movilModalClose && movilModal) {
+        movilModalClose.addEventListener("click", () => movilModal.classList.add("hidden"));
+    }
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && movilModal && !movilModal.classList.contains("hidden")) {
+            movilModal.classList.add("hidden");
+        }
+    });
+
+    if (btnMovilExport) {
+        btnMovilExport.addEventListener("click", () => {
+            window.location.href = "/api/movil/export";
+            showToast("info", "Archivo para el celular", "Descargando sabueso_para_celular_….json. Pásalo a tu iPhone y ábrelo en Sabueso Móvil.");
+        });
+    }
+
+    if (btnMovilImport) {
+        btnMovilImport.addEventListener("click", async () => {
+            const file = movilImportFile && movilImportFile.files ? movilImportFile.files[0] : null;
+            if (!file) {
+                showToast("warning", "Sin archivo", "Elige primero el archivo de avances que generaste en el celular.");
+                return;
+            }
+            btnMovilImport.disabled = true;
+            btnMovilImport.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Respaldando y aplicando...';
+            try {
+                const form = new FormData();
+                form.append("file", file);
+                const res = await fetch("/api/movil/import", { method: "POST", body: form });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "No se pudo importar el archivo.");
+
+                const r = data.resumen;
+                let html = `<p style="font-weight:600;">${escapeHtml(r.aplicados)} avance(s) aplicados · ${escapeHtml(r.omitidos_ya_aplicados)} ya estaban aplicados · ${escapeHtml(r.errores.length)} con error</p>`;
+                if (r.prospectos_nuevos.length) {
+                    html += `<p style="margin-top:8px;"><strong>Prospectos nuevos desde el celular:</strong> ${r.prospectos_nuevos.map(p => "#" + escapeHtml(p.negocio_id) + " " + escapeHtml(p.nombre)).join(", ")}</p>`;
+                }
+                if (r.posibles_duplicados.length) {
+                    html += `<p style="margin-top:8px; color: var(--warning);"><strong>Revisa duplicados:</strong> ${r.posibles_duplicados.map(d => "#" + escapeHtml(d.nuevo_id) + " ↔ #" + escapeHtml(d.existente_id) + " " + escapeHtml(d.existente_nombre)).join("; ")}. No se fusionó nada.</p>`;
+                }
+                if (r.errores.length) {
+                    html += `<p style="margin-top:8px; color: var(--danger);"><strong>No aplicados:</strong></p><ul style="margin:4px 0 0 16px;">` +
+                        r.errores.map(e => `<li>${escapeHtml(e.prospecto || e.evento || "")}: ${escapeHtml(e.motivo)}</li>`).join("") + "</ul>";
+                }
+                html += `<p class="modal-info" style="margin-top:8px;">Después de importar, descarga de nuevo el archivo para el celular: así el iPhone sabe qué avances ya llegaron a la PC.</p>`;
+                movilImportResult.innerHTML = html;
+                movilImportResult.style.display = "block";
+                showToast("success", "Avances importados", `${r.aplicados} cambio(s) del celular aplicados en la base local.`);
+                await loadProspects();
+            } catch (err) {
+                showToast("error", "Error al importar", err.message);
+            } finally {
+                btnMovilImport.disabled = false;
+                btnMovilImport.innerHTML = '<i class="fa-solid fa-file-arrow-up"></i> Importar avances del celular';
+            }
+        });
+    }
+
     // Initial Boots
     loadProspects();
     updateApiStatus();

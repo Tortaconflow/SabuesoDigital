@@ -173,6 +173,22 @@ def init_db(target_path: Path = None):
         _ensure_column(cursor, "negocios", "pregunta_comercial", "TEXT DEFAULT ''")
         _ensure_column(cursor, "negocios", "identidad_verificada", "INTEGER DEFAULT 1")
 
+        # Sabueso Móvil (iPhone): vínculo de prospectos creados en el celular y bitácora idempotente
+        _ensure_column(cursor, "negocios", "movil_uid", "TEXT DEFAULT ''")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS movil_sync (
+                evento_uuid TEXT PRIMARY KEY,
+                tipo TEXT NOT NULL,
+                prospecto_uid TEXT NOT NULL,
+                negocio_id INTEGER,
+                resultado TEXT NOT NULL, -- 'aplicado', 'error'
+                motivo TEXT DEFAULT '',
+                payload_json TEXT NOT NULL,
+                fecha_evento TEXT DEFAULT '',
+                aplicado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS auditoria_cambios_datos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
