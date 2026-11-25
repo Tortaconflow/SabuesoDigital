@@ -16,6 +16,7 @@ La versión de bolsillo (docs/app.js) replica estas reglas; las pruebas de parid
 from urllib.parse import urlparse
 
 import contact_identity
+import conversacion
 import reglas as R
 
 SUFIJOS_DOMINIO = {"com", "mx", "net", "org", "info", "biz", "example", "travel", "co", "site", "online",
@@ -293,7 +294,25 @@ def revisar_mensaje(texto: str, p: dict, contexto=None, tipo: str = "inicial", r
             if any(h["codigo"] == "MSG_VOCABULARIO_OTRO_GIRO" for h in hallazgos):
                 break
 
-    # 4. Calidad: longitud (nunca bloquea), preguntas, genérico, nombre, jerga
+    # 4. Conversación: prospección cerrada, seguimiento único y lo que el prospecto rechazó o conserva
+    cierre = conversacion.estado_prospeccion(p, r)
+    if cierre["cerrada"]:
+        hallazgos.append(_h("MSG_PROSPECCION_CERRADA", "bloqueo",
+                            f"Prospección cerrada: {cierre['motivo']} Solo se reabre si el negocio lo solicita expresamente."))
+    elif tipo == "seguimiento":
+        seg = conversacion.estado_seguimiento(p, r=r)
+        if not seg["permitido"]:
+            hallazgos.append(_h("SEG_NO_PERMITIDO", "bloqueo", f"Seguimiento no disponible: {seg['motivo']}", desde=seg["desde"]))
+    for servicio_id in conversacion.memoria_efectiva(p, r)["excluidos"]:
+        serv = r["servicios"].get(servicio_id) or {}
+        frases = [serv.get("nombre", "")] + [f for f in serv.get("palabras_necesidad", []) if len(R.tokens(f)) >= 2]
+        if any(f and R.contiene_frase(comp, f) for f in frases):
+            hallazgos.append(_h("MSG_SERVICIO_EXCLUIDO", "revision",
+                                f"El negocio dijo que no quiere o que conserva «{serv.get('nombre', servicio_id)}». No insistas.",
+                                servicio=servicio_id))
+            break
+
+    # 5. Calidad: longitud (nunca bloquea), preguntas, genérico, nombre, jerga
     if met["caracteres"] >= cfg["advertencia_desde"]:
         hallazgos.append(_h("MSG_LARGO", "advertencia",
                             f"Mensaje largo: {met['caracteres']} caracteres (objetivo {cfg['objetivo_min']}–{cfg['objetivo_max']}).",

@@ -71,6 +71,21 @@ iPhone ── «Enviar avances» (menú Compartir) ──► sabueso_avances_…
 - «Regenerar borrador con las reglas actuales» rehace mensajes viejos con el giro correcto.
 - Las reglas viven en `reglas/sabueso_reglas.json` (las mismas que usa la PC).
 
+## Respuestas, recursos gratuitos y seguimiento (sin internet, 0 tokens)
+
+- **Cuando te contesten:** pega la respuesta en «Respuesta recibida» y toca «Analizar respuesta».
+  - Sabueso propone qué es: automática, rechazo, corrección, comentario, educativa, orientación, quiere contratar o informativa.
+  - También propone qué recordar del negocio y una respuesta corta. **Tú decides:** corrige lo que haga falta y toca «Confirmar y guardar».
+  - Nada se envía solo. La respuesta sugerida se copia y la mandas tú.
+- **Una respuesta automática** («En breve te atenderemos») no cuenta como respuesta ni como interés.
+- **Si piden aprender o no saben por dónde empezar**, Sabueso sugiere un **recurso gratuito**: CÍDIKS Comunidad, Conocimiento o Asesor IA, o un curso gratuito de Meta, HubSpot, Microsoft o Google si coincide con el tema.
+  - Esto no los convierte en prospectos comerciales.
+- **Contactos educativos:** al agregar uno, elige «Tipo de contacto: educativo». Su mensaje es un saludo corto con un recurso gratuito, y no aparecen en Pendientes.
+- **Si dicen que no les interesa:** la prospección se cierra. Ya no se puede abrir WhatsApp ni dar seguimiento.
+  - Solo se reabre si el negocio lo pide expresamente, y debes escribir una nota que lo explique.
+- **Lo que quieren conservar o no quieren** (por ejemplo, su página) ya no se les vuelve a ofrecer.
+- **Seguimiento:** máximo uno y manual. Desde el día 5 después del contacto confirmado (se sugiere entre el día 5 y el 7) y solo si no han contestado.
+
 ## Reglas CÍDIKS que respeta
 
 - Abrir WhatsApp o copiar un mensaje **no** marca a nadie como contactado: hay que confirmarlo.

@@ -128,6 +128,27 @@ def validar_reglas(r: dict) -> None:
                 _exigir(texto.count("?") <= m["max_preguntas"], f"Sector «{sid}»: la pregunta de «{serv}» tiene más de una pregunta.")
     _exigir("default" in r["sector_general"]["preguntas"], "sector_general.preguntas necesita «default».")
     _exigir(r["modalidad_predeterminada"] in r["modalidades"], "La modalidad predeterminada no existe.")
+    # Fase 2: respuestas, memoria, seguimiento y recursos gratuitos
+    for clave in ("respuestas", "memoria", "seguimiento", "recursos_gratuitos"):
+        _exigir(clave in r, f"Falta la sección «{clave}» en las reglas.")
+    cats = r["respuestas"]["categorias"]
+    for cid in r["respuestas"]["orden"] + [r["respuestas"]["predeterminada"]]:
+        _exigir(cid in cats, f"Categoría de respuesta desconocida: «{cid}».")
+    for cid, c in cats.items():
+        for k in ("nombre", "patrones", "cuenta_como_respuesta", "oportunidad_comercial", "conversacion", "respuesta_sugerida"):
+            _exigir(k in c, f"A la categoría «{cid}» le falta «{k}».")
+    _exigir(sum(1 for c in cats.values() if c["oportunidad_comercial"]) >= 1, "Ninguna categoría marca oportunidad comercial.")
+    for k in ("conservar", "rechazar", "necesidad", "restriccion", "prioridad", "jerarquia_fuentes"):
+        _exigir(isinstance(r["memoria"].get(k), list), f"memoria.{k} debe ser una lista.")
+    _exigir(r["seguimiento"].get("maximo") == 1, "El seguimiento debe ser único (máximo 1).")
+    vistos = set()
+    for rec in r["recursos_gratuitos"]:
+        for k in ("id", "titulo", "url", "origen", "condiciones", "intenciones", "temas", "revisado", "revisar_antes"):
+            _exigir(k in rec, f"Al recurso «{rec.get('id')}» le falta «{k}».")
+        _exigir(rec["id"] not in vistos, f"Recurso repetido: «{rec['id']}».")
+        _exigir(rec["url"].startswith("https://"), f"El recurso «{rec['id']}» debe usar https.")
+        _exigir(isinstance(rec.get("palabras", []), list), f"«palabras» del recurso «{rec['id']}» debe ser una lista.")
+        vistos.add(rec["id"])
     for mid, mod in r["modalidades"].items():
         for k in ("saludos", "presentacion", "hechos", "con_necesidad", "pregunta_con_necesidad", "calido", "seguimiento"):
             _exigir(k in mod, f"A la modalidad «{mid}» le falta «{k}».")
@@ -241,12 +262,19 @@ def evaluar_condicion(cond: str, p: dict, s: dict) -> bool:
     return any(normalizar(v) in campo for v in valor.split("|") if v)
 
 
-def servicio_por_reglas(sector: dict, p: dict) -> str:
+def servicio_por_reglas(sector: dict, p: dict, excluidos=None) -> str:
+    """Primer servicio del giro cuyas condiciones se cumplen, saltando los que el prospecto rechazó o conserva."""
+    excluidos = set(excluidos or [])
     s = senales(p)
     for regla in sector["reglas_servicio"]:
+        if regla["servicio"] in excluidos:
+            continue
         if all(evaluar_condicion(c, p, s) for c in regla.get("si", [])):
             return regla["servicio"]
-    return sector["reglas_servicio"][-1]["servicio"]
+    for sid in cargar_reglas()["servicios"]:
+        if sid not in excluidos and sid == "consultoria":
+            return sid
+    return next((sid for sid in cargar_reglas()["servicios"] if sid not in excluidos), "consultoria")
 
 
 def servicio_por_necesidad(texto, r=None):

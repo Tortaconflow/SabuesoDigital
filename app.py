@@ -33,6 +33,7 @@ import movil_sync
 import contact_identity
 import validacion
 import reglas
+import conversacion
 
 # Configuración de codificación y registro en log
 try:
@@ -787,6 +788,9 @@ def api_prospects_get():
             "intentos_whatsapp": n.get("intentos_whatsapp") or 0,
             "ultimo_intento_whatsapp": n.get("ultimo_intento_whatsapp") or "",
             "identidad_requiere_revision": validacion.analizar_identidad(n, indice=indice_numeros)["requiere_revision"],
+            "prospeccion_cerrada": n.get("prospeccion_cerrada") or 0,
+            "tipo_relacion": n.get("tipo_relacion") or "comercial",
+            "ultima_clasificacion": n.get("ultima_clasificacion") or "",
             **anot
         })
 
@@ -806,7 +810,99 @@ def _with_contact_tray(detail: dict) -> dict:
     detail.update(anotaciones.get(detail["id"]) or contact_identity.anotar_bandejas([detail])[detail["id"]])
     detail["intentos_contacto"] = db.get_contact_attempts(detail["id"])
     detail["revision_identidad"] = validacion.analizar_identidad(detail, contexto=todos)
+    detail["interacciones"] = db.get_interactions(detail["id"])
+    detail["conversacion"] = {
+        "prospeccion": conversacion.estado_prospeccion(detail),
+        "seguimiento": conversacion.estado_seguimiento(detail),
+        "memoria": {k: v for k, v in conversacion.memoria_efectiva(detail).items() if k != "items"},
+        "ultima_clasificacion": conversacion.ultima_clasificacion(detail),
+    }
     return detail
+
+
+def _id_de(body):
+    try:
+        return int(body.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _regenerar_borradores(negocio_id):
+    """Rehace los borradores con el estado actual (cierre, memoria, relación). Nunca envía nada."""
+    detail = db.get_negocio_detail(negocio_id)
+    res = copilot.generate_cidiks_messages(detail, evidencias=detail.get("evidencias", []), contexto=db.get_all_negocios())
+    db.save_or_update_negocio({
+        "id": negocio_id, "servicio_sugerido": res["servicio_sugerido"], "hipotesis_comercial": res["hipotesis_comercial"],
+        "pregunta_comercial": res["pregunta_comercial"], "mensaje_personalizado": res["mensaje_personalizado"],
+        "mensaje_calido": res["mensaje_calido"], "mensaje_seguimiento": res["mensaje_seguimiento"], "mensaje_aprobado": 0,
+    })
+    return res
+
+
+@app.route("/api/interacciones/analizar", methods=["POST"])
+def api_interaccion_analizar():
+    """Sugiere intención, memoria, recursos gratuitos y una respuesta breve. No guarda ni envía nada."""
+    body = request.json or {}
+    negocio_id = _id_de(body)
+    detail = db.get_negocio_detail(negocio_id) if negocio_id else None
+    if not detail:
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    texto = str(body.get("texto") or "")[:4000]
+    if not texto.strip():
+        return jsonify({"error": "Pega la respuesta que recibiste."}), 400
+    r = reglas.cargar_reglas()
+    analisis = conversacion.analizar_respuesta(texto, detail)
+    analisis["categorias"] = [{"id": cid, "nombre": c["nombre"]} for cid, c in r["respuestas"]["categorias"].items()]
+    return jsonify(analisis)
+
+
+@app.route("/api/interacciones/confirmar", methods=["POST"])
+def api_interaccion_confirmar():
+    """Guarda la respuesta con la clasificación que eligió la persona y aplica sus efectos."""
+    body = request.json or {}
+    negocio_id = _id_de(body)
+    if not negocio_id or not db.get_negocio_detail(negocio_id):
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    texto = str(body.get("texto") or "")[:4000]
+    clasificacion = str(body.get("clasificacion") or "")
+    if not texto.strip() or not conversacion.info_categoria(clasificacion):
+        return jsonify({"error": "Falta el texto o la clasificación no es válida."}), 400
+    sugerida = (conversacion.clasificar_respuesta(texto) or {}).get("categoria", "")
+    try:
+        db.register_interaction(negocio_id, texto, clasificacion, conversacion.sanear_memoria(body.get("memoria")),
+                                conversacion.sanear_recursos(body.get("recursos")), str(body.get("nota") or ""),
+                                origen="pc", sugerida=sugerida)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    res = _regenerar_borradores(negocio_id)
+    return jsonify({"success": True, "prospecto": _with_contact_tray(db.get_negocio_detail(negocio_id)), "copilot": res})
+
+
+@app.route("/api/prospects/reabrir", methods=["POST"])
+def api_reabrir_prospeccion():
+    body = request.json or {}
+    negocio_id = _id_de(body)
+    if not negocio_id or not db.get_negocio_detail(negocio_id):
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    try:
+        db.reopen_prospecting(negocio_id, str(body.get("nota") or ""), origen="pc")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    res = _regenerar_borradores(negocio_id)
+    return jsonify({"success": True, "prospecto": _with_contact_tray(db.get_negocio_detail(negocio_id)), "copilot": res})
+
+
+@app.route("/api/retroalimentacion", methods=["GET"])
+def api_retroalimentacion():
+    """Retroalimentación de usuarios para detectar mejoras (sin nombres de negocio, texto redactado)."""
+    items = db.get_feedback()
+    return jsonify({"total": len(items), "items": items})
+
+
+@app.route("/api/recursos", methods=["GET"])
+def api_recursos():
+    hoy = time.strftime("%Y-%m-%d")
+    return jsonify([dict(rec, vigente=rec["revisar_antes"] >= hoy) for rec in reglas.cargar_reglas()["recursos_gratuitos"]])
 
 
 @app.route("/api/reglas/sectores", methods=["GET"])
@@ -1101,6 +1197,11 @@ def api_audit():
         "identidad_revisada_firma": prospect.get("identidad_revisada_firma") or "",
         "necesidad_expresada": prospect.get("necesidad_expresada") or "",
     }
+    # Conversación y memoria del prospecto (Fase 2): la auditoría no debe olvidarlas.
+    for clave in ("memoria", "respuesta", "ultima_clasificacion", "prospeccion_cerrada", "prospeccion_reabierta",
+                  "cierre_motivo", "tipo_relacion", "contactos_confirmados_n", "primer_contacto_fecha",
+                  "fecha_contacto_confirmada", "estado_comercial"):
+        datos_generacion[clave] = prospect.get(clave)
     copilot_res = copilot.generate_cidiks_messages(
         prospect=datos_generacion,
         evidencias=evidencias,

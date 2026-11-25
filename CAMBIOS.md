@@ -1,5 +1,30 @@
 # Registro de Cambios: Sabueso Digital 2.0 (CÍDIKS Sales Engine)
 
+## [2.3.0] - 2026-11-25 — Conversación, memoria comercial y ecosistema CÍDIKS (Fase 2)
+
+Rama `feat/aprendizaje-errores` (sin fusionar). Detalle, causa raíz y antes/después en `APRENDIZAJE_ERRORES.md`.
+
+### Nuevo
+- `conversacion.py` y `docs/motor.js` (mismas reglas, sin IA ni red) clasifican cada respuesta: automática, rechazo, corrección, retroalimentación, educativa, orientación, contratación o informativa. Si ninguna aplica, piden revisión humana. Solo «contratación» cuenta como oportunidad comercial.
+- **Memoria comercial:** necesidades, servicios conservados o rechazados, restricciones y prioridades, con la frase literal (correos y teléfonos ocultos) y su fuente. Lo conservado o rechazado no se vuelve a proponer, y el revisor avisa si un borrador insiste.
+- **Recursos gratuitos:** 3 rutas CÍDIKS y 4 cursos externos con fecha de revisión. Se recomiendan solo si son pertinentes, y uno por respuesta.
+- **Contactos educativos:** saludo corto con un recurso gratuito y filtro propio. Nunca pasan solos a prospecto comercial.
+- **Cierre por rechazo:** bloquea mensajes y seguimientos. Solo se reabre con una nota que explique la solicitud expresa.
+- **Seguimiento único:** máximo 1, manual, desde el día 5 (se sugiere entre el 5 y el 7) y solo tras un contacto confirmado.
+- **Retroalimentación:** `/api/retroalimentacion` (sin nombre del negocio y con los datos de contacto ocultos).
+- **PC:** recuadro «Respuesta recibida» (analizar → elegir categoría, memoria y recurso → copiar la respuesta sugerida → confirmar), filtro «Educativos» y reapertura con nota.
+- **Sabueso Móvil 1.3.0:** las mismas funciones sin internet, el alta manual con «Tipo de contacto» y métricas de respuestas humanas, contratación y conversaciones educativas. Eventos sincronizados nuevos: `interaccion` y `reabrir_prospeccion`.
+- **Base de datos (solo agrega):** tablas `interacciones` y `memoria_comercial`; columnas `prospeccion_cerrada`, `cierre_motivo`, `cierre_fecha`, `prospeccion_reabierta`, `reapertura_nota` y `tipo_relacion`.
+
+### Corregido
+- Una respuesta automática ya no cuenta como respuesta recibida (caso 4).
+- Si el negocio quiere conservar su página, no se le vuelve a ofrecer (caso 3).
+- Un rechazo explícito cierra la prospección (caso 6).
+
+### Pruebas
+- 147 recolectadas: 145 pasan, 1 en fallo esperado (QR, Fase 3) y 1 solo en Windows.
+- Recorridos en navegador sin errores: celular 15/15 y PC 10/10. Los recorridos de las fases anteriores siguen pasando.
+
 ## [2.2.0] - 2026-11-25 — Aprendizaje basado en errores reales (Fases 0 y 1)
 
 Rama `feat/aprendizaje-errores` (sin fusionar). Detalle de cada error, causa raíz y antes/después en `APRENDIZAJE_ERRORES.md`.

@@ -46,6 +46,35 @@ CASOS = [
     {"id": 13, "nombre": "Restaurante La Palapa de Mazunte", "sector": "Restaurante", "municipio": "Mazunte", "web": "", "whatsapp": "529581239876", "whatsapp_estado": "WHATSAPP_COMPROBADO"},
 ]
 CASOS.append(dict(CASOS[2], id=14))
+# Fase 2: conversación, memoria, cierre, relación educativa y seguimiento (fecha fija)
+CONTACTADO = {"fecha_contacto_confirmada": "2026-11-20T10:00:00", "primer_contacto_fecha": "2026-11-20T10:00:00",
+              "contactos_confirmados_n": 1, "estado_comercial": "contactado"}
+CASOS += [
+    {"id": 20, "nombre": "Hotel Las Palmas", "sector": "Turismo y hospedaje", "municipio": "Puerto Escondido", "web": "https://laspalmas.example",
+     "telefono": "9541112222", "servicio_sugerido": "web", "respuesta": "Gracias, estamos contentos con nuestra página y queremos conservarla."},
+    dict({"id": 21, "nombre": "Cabañas Luna", "sector": "Turismo y hospedaje", "municipio": "Zipolite", "web": "https://lunaz.example",
+          "whatsapp": "529583334455", "respuesta": "No nos interesa, por favor no vuelvan a escribir."}, **CONTACTADO),
+    {"id": 22, "nombre": "Posada del Sol", "sector": "Turismo y hospedaje", "municipio": "Puerto Escondido", "web": "https://posadadelsol.com",
+     "whatsapp": "529541240793", "whatsapp_estado": "WHATSAPP_COMPROBADO", "servicio_sugerido": "web", "_force_explicit": True,
+     "memoria": [{"tipo": "necesidad", "servicio": "crm", "texto": "Necesitamos ordenar clientes", "fuente": "humano"},
+                 {"tipo": "servicio_rechazado", "servicio": "web", "texto": "No queremos página", "fuente": "prospecto", "vigente": None}]},
+    {"id": 23, "nombre": "Dulces de la Facultad", "sector": "Comercio", "municipio": "Oaxaca de Juárez", "whatsapp": "529511230000",
+     "whatsapp_estado": "confirmado", "tipo_relacion": "educativa", "_hoy": "2026-11-25"},
+    dict({"id": 24, "nombre": "Posada del Sol", "sector": "Hospedaje", "municipio": "Puerto Escondido", "web": "https://posadadelsol.com",
+          "whatsapp": "529541240793", "whatsapp_estado": "WHATSAPP_COMPROBADO", "_hoy": "2026-11-22"}, **CONTACTADO),
+    dict({"id": 25, "nombre": "Posada del Sol", "sector": "Hospedaje", "municipio": "Puerto Escondido", "web": "https://posadadelsol.com",
+          "whatsapp": "529541240793", "whatsapp_estado": "WHATSAPP_COMPROBADO", "_hoy": "2026-11-26",
+          "respuesta": "Gracias por comunicarte, en breve te atenderemos"}, **CONTACTADO),
+    dict({"id": 26, "nombre": "Posada del Sol", "sector": "Hospedaje", "municipio": "Puerto Escondido", "web": "https://posadadelsol.com",
+          "whatsapp": "529541240793", "prospeccion_reabierta": 1, "ultima_clasificacion": "rechazo", "_hoy": "2026-11-26"}, **CONTACTADO),
+]
+RESPUESTAS = [
+    "¡Hola! Gracias por comunicarte con Posada Sol. En breve te atenderemos.", "No nos interesa, gracias.",
+    "Número equivocado, no somos un hotel.", "Me sirvió mucho la guía, gracias", "Quiero aprender a vender por WhatsApp con catálogo",
+    "¿Por dónde empiezo para tener catálogo?", "¿Cuánto cobran por una página web?", "Les comparto nuestro menú", "Me interesa, platiquemos",
+    "¿Tienen algún curso gratis de WhatsApp Business?", "Quiero aprender inteligencia artificial para mi negocio",
+    "Estamos contentos con nuestra página y queremos conservarla. Solo nos interesa algo para Instagram. No tenemos presupuesto, escríbanme a ana@correo.com o al 954 123 4567.",
+]
 CASOS[-1]["identidad_revisada_firma"] = V.firma_identidad(CASOS[-1])
 
 MENSAJES = [
@@ -72,6 +101,9 @@ def _resumen_generacion(res):
     out["requiere_revision"] = res["revision"]["identidad_requiere_revision"]
     out["firma"] = res["revision"]["firma_identidad"]
     out["revision_mensajes"] = {k: sorted((h["codigo"], h["severidad"]) for h in v["hallazgos"]) for k, v in res["revision"]["mensajes"].items()}
+    out["conversacion"] = res.get("conversacion")
+    out["seguimiento"] = res.get("seguimiento")
+    out["recursos"] = [x["id"] for x in res.get("recursos_sugeridos") or []]
     return out
 
 
@@ -84,8 +116,12 @@ def _python():
         qa.append({"hallazgos": [(h["codigo"], h["severidad"]) for h in res["hallazgos"]], "metricas": res["metricas"],
                    "bloqueado": res["bloqueado"], "requiere_aprobacion": res["requiere_aprobacion"], "mensajes": [h["mensaje"] for h in res["hallazgos"]]})
     tel = [contact_identity.normalizar_telefono(t, "MX") for t in TELEFONOS]
+    import conversacion
+    conv = [{"clasif": conversacion.clasificar_respuesta(t), "memoria": conversacion.extraer_memoria(t),
+             "analisis": conversacion.analizar_respuesta(t, CASOS[3], hoy="2026-11-25"), "redactado": conversacion.redactar(t)}
+            for t in RESPUESTAS]
     sectores = [R.detectar_sector(t) for t in ("Turismo y hospedaje", "Turismo", "Hotel y Restaurante El Mirador", "Muebles Rústicos", "Clínica")]
-    return {"gen": gen, "qa": qa, "tel": tel, "sectores": sectores}
+    return {"gen": gen, "qa": qa, "tel": tel, "sectores": sectores, "conv": conv}
 
 
 NODE_SCRIPT = r"""
@@ -103,6 +139,9 @@ const gen = entrada.casos.map((c) => {
   out.firma = res.revision.firma_identidad;
   out.revision_mensajes = {};
   for (const [k, v] of Object.entries(res.revision.mensajes)) out.revision_mensajes[k] = v.hallazgos.map((h) => [h.codigo, h.severidad]).sort();
+  out.conversacion = res.conversacion === undefined ? null : res.conversacion;
+  out.seguimiento = res.seguimiento === undefined ? null : res.seguimiento;
+  out.recursos = (res.recursos_sugeridos || []).map((x) => x.id);
   return out;
 });
 const qa = entrada.mensajes.map(([texto, i]) => {
@@ -112,14 +151,16 @@ const qa = entrada.mensajes.map(([texto, i]) => {
 });
 const tel = entrada.telefonos.map((t) => M.normalizarTelefono(t, 'MX'));
 const sectores = ['Turismo y hospedaje', 'Turismo', 'Hotel y Restaurante El Mirador', 'Muebles Rústicos', 'Clínica'].map((t) => M.detectarSector(t, r));
-process.stdout.write(JSON.stringify({ gen, qa, tel, sectores }));
+const conv = entrada.respuestas.map((t) => ({ clasif: M.clasificarRespuesta(t, r), memoria: M.extraerMemoria(t, r),
+  analisis: M.analizarRespuesta(t, entrada.casos[3], '2026-11-25', r), redactado: M.redactar(t) }));
+process.stdout.write(JSON.stringify({ gen, qa, tel, sectores, conv }));
 """
 
 
 def _node(tmp_path):
     script = tmp_path / "paridad.js"
     script.write_text(NODE_SCRIPT, encoding="utf-8")
-    entrada = {"casos": CASOS, "contexto": CONTEXTO, "mensajes": MENSAJES, "telefonos": TELEFONOS, "campos": list(CAMPOS)}
+    entrada = {"casos": CASOS, "contexto": CONTEXTO, "mensajes": MENSAJES, "telefonos": TELEFONOS, "campos": list(CAMPOS), "respuestas": RESPUESTAS}
     proc = subprocess.run([NODE, str(script), str(BASE_DIR / "docs" / "motor.js"), str(R.RUTA_REGLAS)],
                           input=json.dumps(entrada, ensure_ascii=False), capture_output=True, text=True, timeout=60, encoding="utf-8")
     assert proc.returncode == 0, proc.stderr
@@ -138,4 +179,6 @@ def test_paridad_generacion_identidad_y_revision(tmp_path):
     for i, (a, b) in enumerate(zip(py["qa"], js["qa"])):
         assert a == b, f"Mensaje {i} difiere:\nPython: {a}\nJS:     {b}"
     assert py["tel"] == js["tel"]
+    for i, (a, b) in enumerate(zip(py["conv"], js["conv"])):
+        assert a == b, f"Respuesta {i} ({RESPUESTAS[i][:40]}) difiere:\nPython: {a}\nJS:     {b}"
     assert py["sectores"] == js["sectores"]

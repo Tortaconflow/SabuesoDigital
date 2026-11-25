@@ -10,7 +10,7 @@
 (function () {
     "use strict";
 
-    const APP_VERSION = "1.2.0";
+    const APP_VERSION = "1.3.0";
     const FORMATO_PC = "sabueso-movil";
     const FORMATO_AVANCES = "sabueso-movil-avances";
     const FORMATO_RESPALDO = "sabueso-movil-respaldo";
@@ -39,9 +39,11 @@
         "prioridad", "estado_comercial", "problemas_detectados", "observacion_verificada", "hipotesis_comercial",
         "pregunta_comercial", "servicio_sugerido", "mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento",
         "notas", "fecha_contacto_confirmada", "canal", "respuesta", "necesidad_expresada", "siguiente_accion",
-        "fecha_seguimiento", "movil_uid", "bandeja_contacto", "ultimo_intento_whatsapp", "pais", "identidad_revisada_firma"
+        "fecha_seguimiento", "movil_uid", "bandeja_contacto", "ultimo_intento_whatsapp", "pais", "identidad_revisada_firma",
+        "cierre_motivo", "tipo_relacion", "ultima_clasificacion", "primer_contacto_fecha"
     ];
-    const CAMPOS_NUM = ["puntuacion", "propuesta_monto", "venta_monto", "ingreso_cobrado", "intentos_whatsapp"];
+    const CAMPOS_NUM = ["puntuacion", "propuesta_monto", "venta_monto", "ingreso_cobrado", "intentos_whatsapp",
+        "prospeccion_cerrada", "prospeccion_reabierta", "contactos_confirmados_n"];
     const CAMPOS_FLAG = ["propuesta_enviada", "venta_acordada", "mensaje_aprobado", "identidad_verificada"];
     const CAMPOS_CRM = [
         "estado_comercial", "respuesta", "necesidad_expresada", "siguiente_accion", "fecha_seguimiento",
@@ -359,6 +361,8 @@
         if (ev.tipo === "contacto_confirmado") {
             v.estado_comercial = "contactado";
             v.fecha_contacto_confirmada = d.fecha || ev.fecha;
+            v.primer_contacto_fecha = v.primer_contacto_fecha || d.fecha || ev.fecha;
+            v.contactos_confirmados_n = (Number(v.contactos_confirmados_n) || 0) + 1;
             v.canal = d.canal;
         } else if (ev.tipo === "actualizacion") {
             Object.assign(v, d);
@@ -377,6 +381,25 @@
                 if (d.sector) v.sector = d.sector;
             }
             v.identidad_revisada_firma = d.firma_resultante || d.firma_vista || "";
+        } else if (ev.tipo === "interaccion") {
+            // Mismos efectos que db.register_interaction en la PC.
+            const info = REGLAS ? M.infoCategoria(d.clasificacion, REGLAS) : null;
+            v.respuesta = M.redactar(d.texto || "");
+            v.ultima_clasificacion = d.clasificacion;
+            v.memoria = (v.memoria || []).concat((d.memoria || []).map((m) => ({ ...m, vigente: 1 })));
+            if (info && info.cierra_prospeccion) {
+                Object.assign(v, { prospeccion_cerrada: 1, prospeccion_reabierta: 0, estado_comercial: "no_interesa",
+                    cierre_motivo: `Rechazo explícito (${String(ev.fecha).slice(0, 10)}).` });
+            }
+            if (info && info.oportunidad_comercial) {
+                v.tipo_relacion = "comercial";
+                if (["investigado", "auditado", "contactado"].includes(v.estado_comercial)) v.estado_comercial = "interesado";
+            } else if (info && info.conversacion === "educativa" && !["interesado", "propuesta", "ganado"].includes(v.estado_comercial)) {
+                v.tipo_relacion = "educativa";
+            }
+            if (info && info.pide_revision_identidad) v.identidad_revisada_firma = "";
+        } else if (ev.tipo === "reabrir_prospeccion") {
+            Object.assign(v, { prospeccion_cerrada: 0, prospeccion_reabierta: 1, estado_comercial: "interesado", tipo_relacion: "comercial" });
         }
     }
 
@@ -416,7 +439,8 @@
     const esAbierto = (p) => p.bandeja === "abierto";
     // Pendientes: sin abrir ni contactar, no bloqueados, con teléfono y sin número repetido.
     const esPendiente = (p) => p.bandeja === "pendiente" && ["investigado", "auditado"].includes(p.estado_comercial) &&
-        !p.oculto_en_pendientes && !estaBloqueado(p) && !!(p.whatsapp || p.telefono);
+        !p.oculto_en_pendientes && !estaBloqueado(p) && !!(p.whatsapp || p.telefono) &&
+        p.tipo_relacion !== "educativa" && !Number(p.prospeccion_cerrada);
     const seguimientoVencido = (p) => !!p.fecha_seguimiento && p.fecha_seguimiento <= hoyISO() && !CERRADOS.has(p.estado_comercial);
     const eventosPendientes = () => estado.eventos.filter((e) => !e.sincronizado);
 
@@ -444,6 +468,11 @@
         if (p.fecha_seguimiento && !/^\d{4}-\d{2}-\d{2}/.test(p.fecha_seguimiento)) p.fecha_seguimiento = "";
         p.fecha_seguimiento = p.fecha_seguimiento.slice(0, 10);
         p.bandeja_contacto = p.bandeja_contacto === "abierto" ? "abierto" : "pendiente";
+        p.tipo_relacion = p.tipo_relacion === "educativa" ? "educativa" : "comercial";
+        p.memoria = (Array.isArray(raw.memoria) ? raw.memoria : []).slice(0, 50).map((m) => ({
+            tipo: texto(m.tipo, 40), servicio: texto(m.servicio, 40), texto: texto(m.texto, 200),
+            fuente: texto(m.fuente, 20) || "prospecto", vigente: m.vigente === 0 ? 0 : 1
+        }));
         p.nombre = p.nombre || "Sin nombre";
         p.origen = "pc";
         return p;
@@ -783,12 +812,19 @@
         out.push(h("h3", null, "Tus números"));
         const contactados = lista.filter(fueContactado).length;
         const interesados = lista.filter((p) => ["interesado", "propuesta", "ganado"].includes(p.estado_comercial)).length;
+        const infoUltima = (p) => (REGLAS ? M.infoCategoria(M.ultimaClasificacion(p, REGLAS), REGLAS) : null);
+        const humanas = lista.filter((p) => (infoUltima(p) || {}).cuenta_como_respuesta).length;
+        const oportunidades = lista.filter((p) => (infoUltima(p) || {}).oportunidad_comercial).length;
+        const educativas = lista.filter((p) => p.tipo_relacion === "educativa").length;
         const propuestas = lista.filter((p) => Number(p.propuesta_enviada)).length;
         const vendido = lista.filter((p) => Number(p.venta_acordada)).reduce((s, p) => s + numero(p.venta_monto), 0);
         const cobrado = lista.reduce((s, p) => s + numero(p.ingreso_cobrado), 0);
         out.push(h("div", { class: "metricas" },
             metrica(lista.length, "Prospectos"),
             metrica(contactados, "Contactos confirmados"),
+            metrica(humanas, "Respuestas humanas"),
+            metrica(oportunidades, "Quieren contratar"),
+            metrica(educativas, "Conversaciones educativas"),
             metrica(interesados, "Interesados"),
             metrica(propuestas, "Propuestas enviadas"),
             metrica(pesos(vendido), "Venta acordada"),
@@ -1105,6 +1141,8 @@
                     p.pregunta_comercial ? h("p", { class: "chico" }, h("strong", null, "Pregunta sugerida: "), p.pregunta_comercial) : null
                 )) : null,
 
+            seccionConversacion(p, uid, vistas),
+
             h("h3", null, "Seguimiento comercial"),
             formularioCRM(p),
 
@@ -1129,6 +1167,89 @@
         panel.classList.remove("oculto");
         panel.scrollTop = scroll;
         actualizarEnvio();
+    }
+
+    // Fase 2: pegar lo que respondieron, confirmar intención y memoria, recursos gratuitos y cierre.
+    const MEM_ETIQUETA = { necesidad: "Necesita", servicio_rechazado: "No quiere", servicio_conservado: "Quiere conservar",
+        restriccion: "Restricción", prioridad: "Prioridad", dato_corregido: "Corrección" };
+    function seccionConversacion(p, uid, vistas) {
+        if (!REGLAS) return null;
+        const cierre = M.estadoProspeccion(p, REGLAS);
+        const mem = M.memoriaEfectiva(p, REGLAS);
+        const ultima = M.ultimaClasificacion(p, REGLAS);
+        const resumen = [
+            `Relación: ${p.tipo_relacion === "educativa" ? "educativa (no comercial)" : "comercial"}`,
+            ultima ? `última respuesta: ${(M.infoCategoria(ultima, REGLAS) || {}).nombre || ultima}` : "",
+            mem.necesidades.length ? `necesita: ${mem.necesidades.join(", ")}` : "",
+            mem.excluidos.length ? `no insistir en: ${mem.excluidos.join(", ")}` : "",
+            mem.restricciones.length ? `restricciones: ${mem.restricciones.join(" / ")}` : ""
+        ].filter(Boolean).join(" · ");
+        const entrada = h("textarea", { placeholder: "Pega aquí lo que te respondieron", "aria-label": "Respuesta recibida" });
+        const resultado = h("div");
+        const notaReabrir = h("input", { type: "text", placeholder: "Solo si el negocio lo pidió: describe su nueva solicitud" });
+        const avisoCierre = cierre.cerrada ? h("div", { class: "aviso aviso-peligro" },
+            h("strong", null, "Prospección cerrada"), `${cierre.motivo} No se envían mensajes comerciales ni seguimientos.`,
+            h("div", { class: "campo" }, notaReabrir),
+            h("button", { class: "btn btn-bloque", type: "button", onclick: async () => {
+                const nota = texto(notaReabrir.value, 500);
+                if (nota.length < 10) { toast("Describe la nueva solicitud expresa del negocio (mínimo 10 caracteres)."); return; }
+                nuevoEvento("reabrir_prospeccion", uid, { nota });
+                await guardar(); await regenerarTrasCambio(uid); toast("Prospección reabierta.", "ok");
+            } }, "Reabrir por solicitud expresa")) : null;
+
+        const analizar = () => {
+            const t = entrada.value;
+            if (!t.trim()) { toast("Pega primero la respuesta."); return; }
+            const a = M.analizarRespuesta(t, p, null, REGLAS);
+            const sel = h("select", null, Object.entries(REGLAS.respuestas.categorias).map(([cid, c]) => h("option", { value: cid }, c.nombre)));
+            sel.value = a.clasificacion ? a.clasificacion.categoria : "humana";
+            const checksMem = a.memoria.map((m) => ({ m, el: h("input", { type: "checkbox", checked: true }) }));
+            const checksRec = a.recursos.map((rec) => ({ rec, el: h("input", { type: "checkbox", checked: true }) }));
+            const sugerida = h("textarea", { value: a.respuesta_sugerida || "", "aria-label": "Respuesta sugerida" });
+            resultado.replaceChildren(
+                h("div", { class: "campo" }, h("label", null, "Intención (confírmala o cámbiala)"), sel),
+                checksMem.length ? h("div", null, h("p", { class: "muy-chico" }, "Lo que dijo el negocio (se guarda lo marcado):"),
+                    checksMem.map(({ m, el }) => h("label", { class: "check" }, el, `${MEM_ETIQUETA[m.tipo] || m.tipo}${m.servicio ? " · " + m.servicio : ""}: «${m.texto}»`))) : null,
+                checksRec.length ? h("div", null, h("p", { class: "muy-chico" }, "Recursos gratuitos pertinentes:"),
+                    checksRec.map(({ rec, el }) => h("label", { class: "check" }, el, h("span", null,
+                        h("a", { href: urlSegura(rec.url) || "#", target: "_blank", rel: "noopener noreferrer" }, rec.titulo), ` (${rec.condiciones})`)))) : null,
+                h("div", { class: "campo" }, h("label", null, "Respuesta sugerida (no se envía sola)"), sugerida),
+                h("div", { class: "fila-btns" },
+                    h("button", { class: "btn", type: "button", onclick: async () => {
+                        if (!sugerida.value.trim()) { toast("No hay respuesta sugerida para esta intención."); return; }
+                        try { await navigator.clipboard.writeText(sugerida.value); } catch { sugerida.select(); document.execCommand("copy"); }
+                        toast("Copiada. Revísala y envíala tú.");
+                    } }, "Copiar respuesta"),
+                    h("button", { class: "btn btn-primario", type: "button", onclick: async () => {
+                        nuevoEvento("interaccion", uid, {
+                            texto: texto(t, 4000), clasificacion: sel.value, sugerida: a.clasificacion ? a.clasificacion.categoria : "",
+                            memoria: checksMem.filter((x) => x.el.checked).map((x) => x.m),
+                            recursos: checksRec.filter((x) => x.el.checked).map((x) => x.rec.id)
+                        });
+                        await guardar(); await regenerarTrasCambio(uid); toast("Respuesta guardada en el celular.", "ok");
+                    } }, "Confirmar y guardar"))
+            );
+        };
+        return h("div", null,
+            h("h3", null, "Respuesta recibida"),
+            h("p", { class: "muy-chico" }, resumen + " · revisión local (0 tokens)"),
+            avisoCierre,
+            h("div", { class: "campo" }, entrada),
+            h("button", { class: "btn btn-bloque", type: "button", onclick: analizar }, "Analizar respuesta"),
+            resultado);
+    }
+
+    // Tras una respuesta o reapertura, rehace los borradores con el estado nuevo (nunca envía nada).
+    async function regenerarTrasCambio(uid) {
+        const vistas = construirVistas();
+        const v = vistas[uid];
+        const res = v && generarMensajes(v, Object.values(vistas));
+        if (res) {
+            nuevoEvento("actualizacion", uid, { mensaje_personalizado: res.mensaje_personalizado, mensaje_calido: res.mensaje_calido, mensaje_seguimiento: res.mensaje_seguimiento });
+            ["mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento"].forEach((k) => delete estado.borradores[`${uid}|${k}`]);
+            await guardar();
+        }
+        render();
     }
 
     // Guarda la revisión humana de identidad (evento para la PC) y regenera los borradores.
@@ -1177,6 +1298,9 @@
         else if (ev.tipo === "nuevo_prospecto") desc = "Alta del prospecto en el celular";
         else if (ev.tipo === "whatsapp_abierto") desc = "Abriste WhatsApp (sin confirmar envío)";
         else if (ev.tipo === "regresar_pendientes") desc = "Regresado a Pendientes";
+        else if (ev.tipo === "interaccion") desc = `Respuesta guardada: ${(REGLAS && M.infoCategoria(d.clasificacion, REGLAS) || {}).nombre || d.clasificacion}`;
+        else if (ev.tipo === "reabrir_prospeccion") desc = "Prospección reabierta por solicitud expresa";
+        else if (ev.tipo === "revision_identidad") desc = "Identidad revisada";
         else desc = `Actualización: ${Object.keys(d).map((k) => k.replace(/_/g, " ")).join(", ")}`;
         const estadoEv = ev.sincronizado ? "✓ en la PC" : (ev.exportado_en ? "Enviado, falta confirmar" : "Solo en el celular");
         const puedeDeshacer = !ev.sincronizado && !ev.exportado_en && !["nuevo_prospecto", "whatsapp_abierto"].includes(ev.tipo);
@@ -1353,6 +1477,9 @@
             web: h("input", { id: "ag-web", type: "url", inputmode: "url", placeholder: "Si tiene" }),
             redes: h("input", { id: "ag-redes", type: "url", inputmode: "url", placeholder: "Link de Facebook o Instagram" }),
             fuente: h("select", { id: "ag-fuente" }, Object.entries(FUENTES).map(([k, v]) => h("option", { value: k }, v))),
+            relacion: h("select", { id: "ag-relacion" },
+                h("option", { value: "comercial" }, "Prospecto comercial"),
+                h("option", { value: "educativa" }, "Persona de la comunidad (educativo, no comercial)")),
             pais: h("select", { id: "ag-pais" },
                 h("option", { value: "MX" }, "México (+52)"),
                 h("option", { value: "" }, "Otro país (escribe el número con +lada)")),
@@ -1379,7 +1506,7 @@
                 nombre, sector: texto(f.sector.value, 120), municipio: texto(f.municipio.value, 120), pais,
                 whatsapp: wa ? norm(wa, false) : "", whatsapp_estado: wa && f.wa_ok.checked ? "confirmado" : "no_verificado",
                 telefono: (tel || wa) ? norm(tel || wa, false) : "", email: texto(f.email.value, 200), web, redes_sociales: redes,
-                fuente: f.fuente.value, identidad_verificada: f.identidad.checked ? 1 : 0
+                fuente: f.fuente.value, identidad_verificada: f.identidad.checked ? 1 : 0, tipo_relacion: f.relacion.value
             };
 
             // No agregar un número que ya existe (en Pendientes, Abiertos o Contactados).
@@ -1464,6 +1591,7 @@
                     h("div", { class: "campo" }, h("label", { for: "ag-email" }, "Correo"), f.email),
                     h("div", { class: "campo" }, h("label", { for: "ag-fuente" }, "¿Dónde lo encontraste?"), f.fuente)
                 ),
+                h("div", { class: "campo" }, h("label", { for: "ag-relacion" }, "Tipo de contacto"), f.relacion),
                 h("div", { class: "campo" }, h("label", { for: "ag-pais" }, "País del número"), f.pais
                 ),
                 h("div", { class: "campo" }, h("label", { for: "ag-web" }, "Sitio web"), f.web),

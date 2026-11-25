@@ -158,12 +158,16 @@
         return valor.split("|").filter(Boolean).some((v) => campo.includes(normalizar(v)));
     }
 
-    function servicioPorReglas(sector, p) {
+    function servicioPorReglas(sector, p, excluidos, r) {
+        const excl = new Set(excluidos || []);
         const sn = senales(p);
         for (const regla of sector.reglas_servicio) {
+            if (excl.has(regla.servicio)) continue;
             if ((regla.si || []).every((c) => evaluarCondicion(c, p, sn))) return regla.servicio;
         }
-        return sector.reglas_servicio[sector.reglas_servicio.length - 1].servicio;
+        const ids = Object.keys(r.servicios);
+        if (ids.includes("consultoria") && !excl.has("consultoria")) return "consultoria";
+        return ids.find((sid) => !excl.has(sid)) || "consultoria";
     }
 
     function servicioPorNecesidad(texto, r) {
@@ -399,6 +403,22 @@
             }
         }
 
+        const cierre = estadoProspeccion(p, r);
+        if (cierre.cerrada) {
+            hallazgos.push(hallazgo("MSG_PROSPECCION_CERRADA", "bloqueo", `Prospección cerrada: ${cierre.motivo} Solo se reabre si el negocio lo solicita expresamente.`));
+        } else if (tipo === "seguimiento") {
+            const seg = estadoSeguimiento(p, null, r);
+            if (!seg.permitido) hallazgos.push(hallazgo("SEG_NO_PERMITIDO", "bloqueo", `Seguimiento no disponible: ${seg.motivo}`, { desde: seg.desde }));
+        }
+        for (const servicioId of memoriaEfectiva(p, r).excluidos) {
+            const serv = r.servicios[servicioId] || {};
+            const frases = [serv.nombre || ""].concat((serv.palabras_necesidad || []).filter((f) => tokens(f).length >= 2));
+            if (frases.some((f) => f && contieneFrase(comp, f))) {
+                hallazgos.push(hallazgo("MSG_SERVICIO_EXCLUIDO", "revision", `El negocio dijo que no quiere o que conserva «${serv.nombre || servicioId}». No insistas.`, { servicio: servicioId }));
+                break;
+            }
+        }
+
         if (met.caracteres >= cfg.advertencia_desde) {
             hallazgos.push(hallazgo("MSG_LARGO", "advertencia", `Mensaje largo: ${met.caracteres} caracteres (objetivo ${cfg.objetivo_min}–${cfg.objetivo_max}).`, { caracteres: met.caracteres }));
         } else if (met.caracteres > cfg.objetivo_max || met.caracteres < cfg.objetivo_min) {
@@ -422,6 +442,161 @@
             requiere_aprobacion: hallazgos.some((h) => h.severidad === "revision"),
             metricas: met,
             en_objetivo: cfg.objetivo_min <= met.caracteres && met.caracteres <= cfg.objetivo_max
+        };
+    }
+
+    // ------------------------------------------------------------ conversacion.py (Fase 2)
+    const TIPOS_EXCLUYENTES = ["servicio_rechazado", "servicio_conservado"];
+    const tienePropia = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
+    function redactar(texto, limite = 1000) {
+        let t = String(texto ?? "").replace(/[A-Za-z0-9_.+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+/g, "[correo]");
+        t = t.replace(/\+?\d[\d\s().-]{7,}\d/g, "[teléfono]");
+        return [...t.trim()].slice(0, limite).join("");
+    }
+    function categoriaInfo(cid, r, coincidencias) {
+        const cat = r.respuestas.categorias[cid];
+        return {
+            categoria: cid, nombre: cat.nombre, coincidencias,
+            cuenta_como_respuesta: !!cat.cuenta_como_respuesta, oportunidad_comercial: !!cat.oportunidad_comercial,
+            conversacion: cat.conversacion, cierra_prospeccion: !!cat.cierra_prospeccion,
+            pide_revision_identidad: !!cat.pide_revision_identidad, registra_retroalimentacion: !!cat.registra_retroalimentacion,
+            recomienda_recursos: !!cat.recomienda_recursos
+        };
+    }
+    function clasificarRespuesta(texto, r) {
+        const comp = textoComparable(texto);
+        if (!comp.trim()) return null;
+        const cfg = r.respuestas;
+        for (const cid of cfg.orden) {
+            const coinc = cfg.categorias[cid].patrones.filter((p) => contieneFrase(comp, p));
+            if (coinc.length) return categoriaInfo(cid, r, coinc);
+        }
+        return categoriaInfo(cfg.predeterminada, r, []);
+    }
+    const infoCategoria = (cid, r) => (cid && tienePropia(r.respuestas.categorias, cid) ? categoriaInfo(cid, r, []) : null);
+
+    function extraerMemoria(texto, r) {
+        const mem = r.memoria;
+        const items = [], vistos = new Set();
+        const agregar = (tipo, servicio, frase) => {
+            const k = JSON.stringify([tipo, servicio, frase]);
+            if (!vistos.has(k)) { vistos.add(k); items.push({ tipo, servicio, texto: frase, fuente: "prospecto" }); }
+        };
+        for (const clausula of String(texto ?? "").split(/[.;!?\n]+/)) {
+            const comp = textoComparable(clausula);
+            if (!comp.trim()) continue;
+            const frase = [...clausula.trim()].slice(0, 160).join("");
+            const tiene = (lista) => lista.some((t) => contieneFrase(comp, t));
+            const servicio = servicioPorNecesidad(clausula, r);
+            const rechaza = tiene(mem.rechazar);
+            if (servicio) {
+                if (rechaza) agregar("servicio_rechazado", servicio, frase);
+                else if (tiene(mem.conservar)) agregar("servicio_conservado", servicio, frase);
+                else if (tiene(mem.necesidad)) agregar("necesidad", servicio, frase);
+            } else if (tiene(mem.necesidad) && !rechaza) {
+                agregar("necesidad", "", frase);
+            }
+            if (tiene(mem.restriccion)) agregar("restriccion", "", frase);
+            if (tiene(mem.prioridad)) agregar("prioridad", "", frase);
+        }
+        return items;
+    }
+
+    function memoriaEfectiva(p, r) {
+        const guardada = (p.memoria || []).filter((m) => Number(m.vigente ?? 1) === 1);
+        const claves = new Set(guardada.map((m) => JSON.stringify([m.tipo, m.servicio || ""])));
+        const derivada = extraerMemoria(p.respuesta || "", r).filter((m) => !claves.has(JSON.stringify([m.tipo, m.servicio])));
+        const jer = r.memoria.jerarquia_fuentes;
+        const rango = (m) => { const i = jer.indexOf(m.fuente); return i >= 0 ? i : jer.length; };
+        const todas = guardada.concat(derivada).map((m, i) => [m, i]).sort((a, b) => (rango(a[0]) - rango(b[0])) || (a[1] - b[1])).map((x) => x[0]);
+        const excluidos = [];
+        for (const m of todas) if (TIPOS_EXCLUYENTES.includes(m.tipo) && m.servicio && !excluidos.includes(m.servicio)) excluidos.push(m.servicio);
+        const necesidades = [];
+        for (const m of todas) {
+            const sv = m.servicio || "";
+            if (m.tipo === "necesidad" && sv && !excluidos.includes(sv) && !necesidades.includes(sv)) necesidades.push(sv);
+        }
+        const textos = (tipo) => todas.filter((m) => m.tipo === tipo).map((m) => m.texto || "");
+        return {
+            necesidades, excluidos,
+            necesidades_sin_servicio: todas.filter((m) => m.tipo === "necesidad" && !m.servicio).map((m) => m.texto || ""),
+            restricciones: textos("restriccion"), prioridades: textos("prioridad"), items: todas
+        };
+    }
+    function ultimaClasificacion(p, r) {
+        const confirmada = s(p.ultima_clasificacion);
+        if (confirmada) return confirmada;
+        const res = clasificarRespuesta(p.respuesta || "", r);
+        return res ? res.categoria : "";
+    }
+    function estadoProspeccion(p, r) {
+        if (Number(p.prospeccion_cerrada || 0) === 1) return { cerrada: true, motivo: p.cierre_motivo || "Rechazo explícito del negocio." };
+        if (Number(p.prospeccion_reabierta || 0) === 1) return { cerrada: false, motivo: "" };
+        if ((p.estado_comercial || "") === "no_interesa") return { cerrada: true, motivo: "Marcado como «No le interesa»." };
+        if (ultimaClasificacion(p, r) === "rechazo") return { cerrada: true, motivo: "El negocio respondió con un rechazo explícito." };
+        return { cerrada: false, motivo: "" };
+    }
+    function hoyLocal() {
+        const d = new Date(), z = (n) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+    }
+    function sumarDias(iso, dias) {
+        const d = new Date(`${iso}T00:00:00Z`);
+        return isNaN(d) ? null : new Date(d.getTime() + dias * 86400000).toISOString().slice(0, 10);
+    }
+    function estadoSeguimiento(p, hoy, r) {
+        const cfg = r.seguimiento;
+        if (estadoProspeccion(p, r).cerrada) return { permitido: false, motivo: "Prospección cerrada: no se envían seguimientos.", desde: "" };
+        const contactos = Number(p.contactos_confirmados_n || 0) || (p.fecha_contacto_confirmada ? 1 : 0);
+        const base = String(p.primer_contacto_fecha || p.fecha_contacto_confirmada || "").slice(0, 10);
+        if (!contactos || !base) return { permitido: false, motivo: "Aún no hay un primer contacto confirmado.", desde: "" };
+        const cat = ultimaClasificacion(p, r);
+        const info = cat ? infoCategoria(cat, r) : null;
+        if (info && info.cuenta_como_respuesta) return { permitido: false, motivo: "Conversación activa: responde personalmente a lo que escribieron.", desde: "" };
+        if (contactos > cfg.maximo) return { permitido: false, motivo: "Ya se envió el único seguimiento permitido.", desde: "" };
+        const desde = /^\d{4}-\d{2}-\d{2}$/.test(base) ? sumarDias(base, cfg.dias_minimos) : null;
+        if (!desde) return { permitido: false, motivo: "La fecha del primer contacto no es válida.", desde: "" };
+        const hasta = sumarDias(base, cfg.dias_sugeridos_hasta);
+        const hoyIso = String(hoy || p._hoy || hoyLocal()).slice(0, 10);
+        if (hoyIso < desde) return { permitido: false, motivo: `Disponible a partir del ${desde}.`, desde };
+        return { permitido: true, motivo: `Seguimiento único permitido (sugerido entre el ${desde} y el ${hasta}).`, desde };
+    }
+    function recursosSugeridos(intencion, servicios, hoy, maximo, r, texto) {
+        const hoyIso = String(hoy || hoyLocal()).slice(0, 10);
+        const sv = (servicios || []).filter(Boolean);
+        const comp = texto ? textoComparable(texto) : "";
+        const cands = [];
+        r.recursos_gratuitos.forEach((rec, i) => {
+            if (rec.revisar_antes < hoyIso) return;
+            if (intencion && !rec.intenciones.includes(intencion)) return;
+            let coincide = sv.filter((x, j) => sv.indexOf(x) === j && rec.temas.includes(x)).length;
+            if (comp && (rec.palabras || []).some((f) => contieneFrase(comp, f))) coincide += 1;
+            if ((sv.length || coincide) && !coincide && rec.origen !== "cidiks") return;
+            cands.push({ coincide, propio: rec.origen === "cidiks" ? 1 : 0, i, rec });
+        });
+        cands.sort((a, b) => (b.coincide - a.coincide) || (b.propio - a.propio) || (a.i - b.i));
+        return cands.slice(0, maximo ?? 2).map((c) => c.rec);
+    }
+    function respuestaSugerida(cid, p, recursos, r) {
+        const cat = tienePropia(r.respuestas.categorias, cid) ? r.respuestas.categorias[cid] : null;
+        if (!cat || !cat.respuesta_sugerida) return "";
+        let plantilla = cat.respuesta_sugerida;
+        if (plantilla.includes("{recurso}")) {
+            if (!recursos || !recursos.length) return "";
+            plantilla = rellenar(plantilla, { recurso: `${recursos[0].titulo} ${recursos[0].url}` });
+        }
+        return rellenar(plantilla, { nombre: p.nombre || "" });
+    }
+    function analizarRespuesta(texto, p, hoy, r) {
+        const clasif = clasificarRespuesta(texto, r);
+        const memoria = extraerMemoria(texto, r);
+        const servicios = memoria.filter((m) => m.tipo === "necesidad" && m.servicio).map((m) => m.servicio);
+        for (const sv of memoriaEfectiva(p, r).necesidades) if (!servicios.includes(sv)) servicios.push(sv);
+        const recursos = clasif && clasif.recomienda_recursos ? recursosSugeridos(clasif.categoria, servicios, hoy, 2, r, texto) : [];
+        return {
+            clasificacion: clasif, memoria, recursos,
+            respuesta_sugerida: clasif ? respuestaSugerida(clasif.categoria, p, recursos, r) : "",
+            texto_guardado: redactar(texto)
         };
     }
 
@@ -466,10 +641,13 @@
             const porNecesidad = servicioPorNecesidad(necesidad, r);
             if (porNecesidad) return [porNecesidad, "necesidad_confirmada"];
         }
-        const forzado = !!(honorExplicit && p._force_explicit && serviciosValidos(r).has(explicit) && !(explicit in ESPECIALES));
+        const memoria = memoriaEfectiva(p, r);
+        if (memoria.necesidades.length) return [memoria.necesidades[0], "necesidad_confirmada"];
+        const excluidos = memoria.excluidos;
+        const forzado = !!(honorExplicit && p._force_explicit && serviciosValidos(r).has(explicit) && !(explicit in ESPECIALES) && !excluidos.includes(explicit));
         if (necesitaInvestigar(p, r)[0] && !forzado) return ["investigar_mas", "reglas"];
         if (forzado) return [explicit, "eleccion_humana"];
-        return [servicioPorReglas(sectorDeProspecto(p, r).sector, p), "reglas_sector"];
+        return [servicioPorReglas(sectorDeProspecto(p, r).sector, p, excluidos, r), "reglas_sector"];
     }
     function observacionVerificada(p, r, evidencias) {
         const [ok, motivo] = verificarIdentidad(p, r);
@@ -496,8 +674,15 @@
         if (servicio === "no_contactar") return "Sin fuente pública legítima confirmada; no debe iniciarse contacto comercial.";
         if (servicio === "investigar_mas") return necesitaInvestigar(p, r)[1] || "Estructura operativa sin contacto directo; conviene identificar primero al encargado.";
         const serv = r.servicios[servicio];
-        const necesidad = s(p.necesidad_expresada);
-        if (fuente === "necesidad_confirmada" && serv) return `Necesidad confirmada por el negocio: «${necesidad}». Solución a conversar: ${serv.nombre}.`;
+        let necesidad = s(p.necesidad_expresada);
+        if (fuente === "relacion_educativa") return "Conversación educativa: no es una oportunidad comercial. Se comparten recursos gratuitos.";
+        if (fuente === "necesidad_confirmada" && serv) {
+            if (!necesidad) {
+                const frases = memoriaEfectiva(p, r).items.filter((m) => m.tipo === "necesidad" && m.servicio === servicio).map((m) => m.texto);
+                necesidad = frases.length ? frases[0] : serv.nombre;
+            }
+            return `Necesidad confirmada por el negocio: «${necesidad}». Solución a conversar: ${serv.nombre}.`;
+        }
         if (necesidad) return `Necesidad confirmada por el negocio: «${necesidad}». No se reconoció automáticamente la solución; revísala antes de proponer.`;
         const textoH = (sector.hipotesis || {})[servicio] || (serv || {}).hipotesis;
         return textoH ? `Hipótesis: ${textoH}` : "Hipótesis exploratoria sujeta a validación con el negocio.";
@@ -557,13 +742,36 @@
         };
     }
 
+    function componerEducativo(p, servicioKey, r) {
+        const mod = r.modalidades.orientacion_educativa;
+        const nombre = cleanBusinessName(p.nombre || p["Nombre del negocio"] || "Equipo");
+        const loc = localidad(p, r);
+        const saludo = rellenar(mod.saludos[indiceEstilo(p, mod.saludos.length)], { nombre, en_localidad: loc ? ` en ${loc}` : "" });
+        const recursos = recursosSugeridos("educativa", [servicioKey], p._hoy, 1, r);
+        let preg, frio;
+        if (recursos.length) {
+            preg = mod.pregunta;
+            frio = [saludo, mod.presentacion, rellenar(mod.recurso, { recurso: `${recursos[0].titulo} ${recursos[0].url}` }), mod.pregunta].join(" ");
+        } else {
+            preg = mod.pregunta_sin_recurso;
+            frio = [saludo, mod.presentacion, preg].join(" ");
+        }
+        return {
+            pregunta: preg, mensaje_personalizado: frio.trim(),
+            mensaje_calido: rellenar(mod.calido, { nombre, pregunta: preg }).trim(),
+            mensaje_seguimiento: rellenar(mod.seguimiento, { nombre }).trim(), recursos
+        };
+    }
+
     function generarMensajes(p, r, contexto, indice, evidencias) {
         const nombre = cleanBusinessName(p.nombre || p["Nombre del negocio"] || "Equipo");
         const [ok, motivo] = verificarIdentidad(p, r);
         const identidad = analizarIdentidad(p, contexto, r, indice);
         const info = sectorDeProspecto(p, r);
         const sector = info.conflicto && !identidad.confirmada_por_humano ? r.sector_general : info.sector;
-        const [servicioKey, fuente] = seleccionarServicio(p, r, true);
+        const [servicioKey, fuenteSel] = seleccionarServicio(p, r, true);
+        const educativa = (p.tipo_relacion || "") === "educativa" && !(servicioKey in ESPECIALES);
+        const fuente = educativa ? "relacion_educativa" : fuenteSel;
         const servicioNombre = ((r.servicios[servicioKey] || ESPECIALES[servicioKey]) || {}).nombre || "";
         const observacion = observacionVerificada(p, r, evidencias);
         const hip = hipotesis(p, servicioKey, sector, fuente, r);
@@ -579,6 +787,13 @@
             sector_id: sector.id, sector_nombre: sector.nombre,
             observacion_verificada: observacion, hipotesis_comercial: hip, evidencia_origen: observacion,
             consumo_tokens: 0, motor: "reglas_deterministas",
+            conversacion: (() => {
+                const mem = memoriaEfectiva(p, r); delete mem.items;
+                return { ultima_clasificacion: ultimaClasificacion(p, r), tipo_relacion: educativa ? "educativa" : "comercial",
+                    prospeccion: estadoProspeccion(p, r), memoria: mem };
+            })(),
+            seguimiento: estadoSeguimiento(p, null, r),
+            recursos_sugeridos: [],
             revision: {
                 identidad: identidad.hallazgos, identidad_requiere_revision: identidad.requiere_revision,
                 identidad_confirmada: identidad.confirmada_por_humano, firma_identidad: identidad.firma, mensajes: {}
@@ -594,6 +809,11 @@
             return bloquear(`[BLOQUEADO — NO CONTACTAR TODAVÍA]\nMotivo: ${motivo}\nAcción recomendada: Verificar primero que ${nombre} opere activamente y confirmar un canal oficial antes de redactar un mensaje.`,
                 "IDENTIDAD_NO_VERIFICADA", ok);
         }
+        const cierre = estadoProspeccion(p, r);
+        if (cierre.cerrada) {
+            return bloquear(`[BLOQUEADO — PROSPECCIÓN CERRADA]\nMotivo: ${cierre.motivo}\nNo se envían mensajes comerciales ni seguimientos a ${nombre}. Solo se reabre si el negocio lo solicita expresamente.`,
+                "PROSPECCION_CERRADA");
+        }
         if (servicioKey === "investigar_mas") {
             return bloquear(`[RECOMENDACIÓN: INVESTIGAR MÁS ANTES DE CONTACTAR]\nObservación: ${observacion}\nNota comercial: ${hip}\nSi decides contactar a ${nombre}, selecciona manualmente una capacidad específica de CÍDIKS en el selector superior.`,
                 "REQUIERE_INVESTIGACION");
@@ -604,14 +824,20 @@
             return bloquear(`[REVISIÓN HUMANA REQUERIDA]\nAntes de escribir a ${nombre}, confirma: ${motivos}\nEn la ficha: «Confirmar identidad» o corrige el nombre o el giro.`,
                 "REQUIERE_REVISION_HUMANA", true, preg);
         }
-        const mensajes = componerMensajes(p, sector, servicioKey, fuente, r);
+        let mensajes;
+        if (educativa) {
+            mensajes = componerEducativo(p, servicioKey, r);
+            base.recursos_sugeridos = mensajes.recursos;
+        } else {
+            mensajes = componerMensajes(p, sector, servicioKey, fuente, r);
+        }
         const revisiones = {};
         for (const [campo, tipo] of [["mensaje_personalizado", "inicial"], ["mensaje_calido", "inicial"], ["mensaje_seguimiento", "seguimiento"]]) {
             revisiones[campo] = revisarMensaje(mensajes[campo], p, contexto, tipo, r);
         }
         base.revision.mensajes = revisiones;
         return Object.assign(base, {
-            bloqueado_envio: Object.values(revisiones).some((v) => v.bloqueado),
+            bloqueado_envio: revisiones.mensaje_personalizado.bloqueado,
             tipo_observacion: verificadas.length ? "OBSERVACION_COMPROBADA" : "HIPOTESIS_COMERCIAL",
             pregunta_comercial: mensajes.pregunta,
             mensaje_personalizado: mensajes.mensaje_personalizado,
@@ -625,6 +851,8 @@
         normalizarTelefono, clavesContacto, paisDelProspecto,
         detectarSector, sectorDeProspecto, sectorPorId, servicioPorNecesidad, localidad,
         dominioDe, compararNombreDominio, firmaIdentidad, indiceClaves, analizarIdentidad, revisarMensaje,
-        generarMensajes
+        generarMensajes,
+        redactar, clasificarRespuesta, infoCategoria, extraerMemoria, memoriaEfectiva, ultimaClasificacion,
+        estadoProspeccion, estadoSeguimiento, recursosSugeridos, respuestaSugerida, analizarRespuesta
     };
 }));

@@ -21,6 +21,7 @@ import json
 import re
 from datetime import datetime
 
+import conversacion
 import db
 import validacion
 
@@ -32,7 +33,8 @@ MAX_EVENTS = 5000
 MAX_TEXT = 2000
 MAX_MESSAGE = 5000
 
-EVENT_TYPES = {"nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota", "whatsapp_abierto", "regresar_pendientes", "revision_identidad"}
+EVENT_TYPES = {"nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota", "whatsapp_abierto", "regresar_pendientes",
+               "revision_identidad", "interaccion", "reabrir_prospeccion"}
 CANALES = {"whatsapp", "llamada", "email", "redes", "persona"}
 ESTADOS_ACTUALIZABLES = {"investigado", "auditado", "interesado", "no_interesa", "propuesta", "ganado", "descartado"}
 FUENTES = {"maps", "facebook", "instagram", "persona", "recomendacion", "web", "otro"}
@@ -53,6 +55,8 @@ EXPORT_FIELDS = (
     "siguiente_accion", "fecha_seguimiento", "propuesta_enviada", "propuesta_monto",
     "venta_acordada", "venta_monto", "ingreso_cobrado", "movil_uid",
     "bandeja_contacto", "intentos_whatsapp", "ultimo_intento_whatsapp", "identidad_revisada_firma",
+    "prospeccion_cerrada", "cierre_motivo", "prospeccion_reabierta", "tipo_relacion", "ultima_clasificacion",
+    "contactos_confirmados_n", "primer_contacto_fecha",
 )
 
 
@@ -68,6 +72,7 @@ def build_mobile_export() -> dict:
     """Genera el paquete JSON que el celular importa (solo prospectos fuera de cuarentena)."""
     negocios = db.get_all_negocios(sort_col="puntuacion", sort_dir="desc")
     indice = validacion.indice_claves(negocios)
+    memorias = db.get_memory_by_business()
     prospectos = []
     for n in negocios:
         item = {}
@@ -78,6 +83,7 @@ def build_mobile_export() -> dict:
         item["revision_identidad"] = ident["hallazgos"]
         item["identidad_requiere_revision"] = ident["requiere_revision"]
         item["firma_identidad"] = ident["firma"]
+        item["memoria"] = memorias.get(n["id"], [])
         prospectos.append(item)
 
     with db.get_db() as conn:
@@ -285,6 +291,12 @@ def _apply_nuevo_prospecto(uid: str, datos: dict, fecha: str) -> dict:
         )
         conn.commit()
 
+    # Contacto de la comunidad (educativo): no entra a la prospección comercial.
+    if _text(datos.get("tipo_relacion"), 20, "tipo_relacion") == "educativa":
+        with db.get_db() as conn:
+            conn.execute("UPDATE negocios SET tipo_relacion = 'educativa' WHERE id = ?", (nuevo_id,))
+            conn.commit()
+
     # La persona confirmó en el celular que los datos son de este negocio (revisión de identidad).
     firma = _text(datos.get("identidad_revisada_firma"), 16, "identidad_revisada_firma")
     if re.match(r"^[0-9a-f]{8}$", firma):
@@ -396,6 +408,19 @@ def _apply_revision_identidad(negocio_id: int, datos: dict, fecha: str):
     db.record_identity_review(negocio_id, firma_actual, nota=nota, origen="movil", fecha=fecha)
 
 
+def _apply_interaccion(negocio_id: int, datos: dict, fecha: str, evento_uuid: str):
+    texto = _text(datos.get("texto"), 4000, "texto")
+    clasificacion = _text(datos.get("clasificacion"), 30, "clasificacion")
+    if not texto or not conversacion.info_categoria(clasificacion):
+        raise EventoInvalido("La respuesta no trae texto o su clasificación no es válida.")
+    memoria = datos.get("memoria") if isinstance(datos.get("memoria"), list) else []
+    recursos = datos.get("recursos") if isinstance(datos.get("recursos"), list) else []
+    db.register_interaction(negocio_id, texto, clasificacion, conversacion.sanear_memoria(memoria),
+                            conversacion.sanear_recursos(recursos), _text(datos.get("nota"), 500, "nota"),
+                            origen="movil", fecha=fecha, evento_uuid=evento_uuid,
+                            sugerida=_text(datos.get("sugerida"), 30, "sugerida"))
+
+
 def _record_result(evento_uuid, tipo, uid, negocio_id, resultado, motivo, evento, fecha):
     with db.get_db() as conn:
         conn.execute("""
@@ -476,6 +501,10 @@ def apply_mobile_events(payload: dict) -> dict:
                     _apply_nota(negocio_id, datos, fecha)
                 elif tipo == "whatsapp_abierto":
                     _apply_whatsapp_abierto(negocio_id, datos, fecha, evento_uuid)
+                elif tipo == "interaccion":
+                    _apply_interaccion(negocio_id, datos, fecha, evento_uuid)
+                elif tipo == "reabrir_prospeccion":
+                    db.reopen_prospecting(negocio_id, _text(datos.get("nota"), 500, "nota"), origen="movil", fecha=fecha)
                 elif tipo == "revision_identidad":
                     _apply_revision_identidad(negocio_id, datos, fecha)
                 elif tipo == "regresar_pendientes":

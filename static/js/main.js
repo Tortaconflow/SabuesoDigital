@@ -396,7 +396,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function isPendingWhatsApp(p) {
         const bandeja = p.bandeja || "pendiente";
-        return isWhatsAppProspect(p) && bandeja === "pendiente" && !p.oculto_en_pendientes;
+        return isWhatsAppProspect(p) && bandeja === "pendiente" && !p.oculto_en_pendientes
+            && (p.tipo_relacion || "comercial") !== "educativa" && !Number(p.prospeccion_cerrada);
     }
 
     function isWhatsAppProspect(p) {
@@ -417,6 +418,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const waCount = prospects.filter(p => isPendingWhatsApp(p)).length;
         const openCount = prospects.filter(p => p.bandeja === "abierto").length;
         const hiddenDupCount = prospects.filter(p => p.oculto_en_pendientes).length;
+        const countEduEl = document.getElementById("count-edu-tray");
+        if (countEduEl) countEduEl.textContent = prospects.filter(p => p.tipo_relacion === "educativa").length;
         const countOpenTrayEl = document.getElementById("count-open-tray");
         if (countOpenTrayEl) countOpenTrayEl.textContent = openCount;
         const dupNoteEl = document.getElementById("dup-hidden-note");
@@ -452,6 +455,8 @@ document.addEventListener("DOMContentLoaded", () => {
             filtered = filtered.sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0)).slice(0, 10);
         } else if (activeFilter === "critical") {
             filtered = filtered.filter(p => p.prioridad === "critical" || (p.puntuacion && p.puntuacion >= 85));
+        } else if (activeFilter === "educativos") {
+            filtered = filtered.filter(p => p.tipo_relacion === "educativa");
         } else if (activeFilter === "opened") {
             filtered = filtered.filter(p => p.bandeja === "abierto");
         } else if (activeFilter === "contacted") {
@@ -812,6 +817,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Outreach links
             renderIdentityReview(p);
+            renderConversacion(p);
             updateOutreachLinks(p);
             requestMessageReview();
 
@@ -1045,6 +1051,104 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (err) {
             showToast("error", "Error", err.message);
         }
+    }
+
+    // ========================================
+    // Fase 2: respuesta recibida, memoria, recursos gratuitos y cierre
+    // ========================================
+    let ultimoAnalisis = null;
+    const CLASIF_ETIQUETA = { automatica: "Automática", rechazo: "Rechazo", correccion: "Corrección", retroalimentacion: "Retroalimentación",
+        educativa: "Educativa", orientacion: "Orientación", contratacion: "Contratación", informativa: "Informativa", humana: "Humana" };
+    const MEM_ETIQUETA = { necesidad: "Necesidad", servicio_rechazado: "No quiere", servicio_conservado: "Quiere conservar",
+        restriccion: "Restricción", prioridad: "Prioridad", dato_corregido: "Corrección" };
+
+    function renderConversacion(p) {
+        const conv = (p && p.conversacion) || {};
+        const estado = document.getElementById("conv-estado");
+        const cerrada = document.getElementById("conv-cerrada");
+        const res = document.getElementById("conv-resultado");
+        if (res) res.style.display = "none";
+        const texto = document.getElementById("conv-texto");
+        if (texto) texto.value = "";
+        ultimoAnalisis = null;
+        if (!estado || !cerrada) return;
+        const mem = conv.memoria || {};
+        const partes = [];
+        partes.push(`Relación: ${p.tipo_relacion === "educativa" ? "educativa (no comercial)" : "comercial"}`);
+        if (conv.ultima_clasificacion) partes.push(`última respuesta: ${CLASIF_ETIQUETA[conv.ultima_clasificacion] || conv.ultima_clasificacion}`);
+        if (conv.seguimiento) partes.push(`seguimiento: ${conv.seguimiento.motivo}`);
+        if ((mem.necesidades || []).length) partes.push(`necesita: ${mem.necesidades.join(", ")}`);
+        if ((mem.excluidos || []).length) partes.push(`no insistir en: ${mem.excluidos.join(", ")}`);
+        if ((mem.restricciones || []).length) partes.push(`restricciones: ${mem.restricciones.join(" / ")}`);
+        estado.textContent = partes.join(" · ");
+        const pr = conv.prospeccion || {};
+        cerrada.style.display = pr.cerrada ? "block" : "none";
+        const ct = document.getElementById("conv-cerrada-texto");
+        if (ct) ct.textContent = pr.cerrada ? `Prospección cerrada: ${pr.motivo} No se envían mensajes comerciales ni seguimientos.` : "";
+    }
+
+    async function postConv(url, payload, okMsg) {
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: selectedProspectId, ...payload }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "No se pudo completar.");
+        if (okMsg) {
+            showToast("success", okMsg, "Los borradores se regeneraron con la información nueva. Nada se envió.");
+            await loadProspects();
+            selectProspect(selectedProspectId);
+        }
+        return data;
+    }
+
+    const btnConvAnalizar = document.getElementById("btn-conv-analizar");
+    if (btnConvAnalizar) {
+        btnConvAnalizar.addEventListener("click", async () => {
+            if (!selectedProspectId) return;
+            const texto = (document.getElementById("conv-texto") || {}).value || "";
+            try {
+                const a = await postConv("/api/interacciones/analizar", { texto });
+                ultimoAnalisis = { texto, ...a };
+                const sel = document.getElementById("conv-clasif");
+                sel.innerHTML = a.categorias.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nombre)}</option>`).join("");
+                sel.value = a.clasificacion ? a.clasificacion.categoria : "humana";
+                document.getElementById("conv-memoria").innerHTML = a.memoria.length
+                    ? "<div style='font-size: 11px;'>Lo que dijo el negocio (marca lo que quieras guardar):</div>" + a.memoria.map((m, i) =>
+                        `<label style="display:block;"><input type="checkbox" class="conv-mem" data-i="${i}" checked> ${escapeHtml(MEM_ETIQUETA[m.tipo] || m.tipo)}${m.servicio ? " · " + escapeHtml(m.servicio) : ""}: «${escapeHtml(m.texto)}»</label>`).join("")
+                    : "";
+                document.getElementById("conv-recursos").innerHTML = a.recursos.length
+                    ? "<div style='font-size: 11px;'>Recursos gratuitos pertinentes:</div>" + a.recursos.map(r =>
+                        `<label style="display:block;"><input type="checkbox" class="conv-rec" value="${escapeHtml(r.id)}" checked> <a href="${safeUrl(r.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.titulo)}</a> <span style="color: var(--text-muted);">(${escapeHtml(r.condiciones)})</span></label>`).join("")
+                    : "";
+                document.getElementById("conv-sugerida").value = a.respuesta_sugerida || "";
+                document.getElementById("conv-resultado").style.display = "block";
+            } catch (err) { showToast("error", "Error", err.message); }
+        });
+    }
+    const btnConvCopiar = document.getElementById("btn-conv-copiar");
+    if (btnConvCopiar) {
+        btnConvCopiar.addEventListener("click", () => {
+            const t = (document.getElementById("conv-sugerida") || {}).value || "";
+            if (!t.trim()) { showToast("warning", "Sin texto", "No hay respuesta sugerida para esta intención."); return; }
+            navigator.clipboard.writeText(t).then(() => showToast("info", "Copiada", "Revísala y envíala tú. Copiar no registra ningún envío."));
+        });
+    }
+    const btnConvConfirmar = document.getElementById("btn-conv-confirmar");
+    if (btnConvConfirmar) {
+        btnConvConfirmar.addEventListener("click", async () => {
+            if (!ultimoAnalisis) return;
+            const memoria = [...document.querySelectorAll(".conv-mem:checked")].map(el => ultimoAnalisis.memoria[Number(el.dataset.i)]);
+            const recursos = [...document.querySelectorAll(".conv-rec:checked")].map(el => el.value);
+            try {
+                await postConv("/api/interacciones/confirmar", { texto: ultimoAnalisis.texto, clasificacion: document.getElementById("conv-clasif").value, memoria, recursos }, "Respuesta guardada");
+            } catch (err) { showToast("error", "Error", err.message); }
+        });
+    }
+    const btnConvReabrir = document.getElementById("btn-conv-reabrir");
+    if (btnConvReabrir) {
+        btnConvReabrir.addEventListener("click", async () => {
+            const nota = ((document.getElementById("conv-reabrir-nota") || {}).value || "").trim();
+            try { await postConv("/api/prospects/reabrir", { nota }, "Prospección reabierta"); }
+            catch (err) { showToast("error", "No se reabrió", err.message); }
+        });
     }
 
     const btnIdentityConfirm = document.getElementById("btn-identity-confirm");

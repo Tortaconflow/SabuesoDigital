@@ -313,6 +313,7 @@
                 <div class="quick-filters" id="quick-filters">
                     <button class="filter-chip active" data-filter="wa_main" title="Prospectos con WhatsApp que aún no abres ni contactas. Cada número aparece una sola vez."><i class="fa-brands fa-whatsapp" style="color: #10b981;"></i> Pendientes WhatsApp (<span id="count-wa-tray">0</span>)</button>
                     <button class="filter-chip" data-filter="opened" title="Abriste WhatsApp pero todavía no confirmas que enviaste el mensaje."><i class="fa-solid fa-envelope-open"></i> Abiertos (<span id="count-open-tray">0</span>)</button>
+                    <button class="filter-chip" data-filter="educativos" title="Conversaciones educativas: no son oportunidades comerciales."><i class="fa-solid fa-graduation-cap"></i> Educativos (<span id="count-edu-tray">0</span>)</button>
                     <button class="filter-chip" data-filter="other_channels"><i class="fa-solid fa-address-book"></i> Otros canales (<span id="count-other-tray">0</span>)</button>
                     <button class="filter-chip" data-filter="all"><i class="fa-solid fa-list"></i> Todos</button>
                     <button class="filter-chip" data-filter="top10"><i class="fa-solid fa-inbox"></i> Top 10 Sesión</button>
@@ -521,6 +522,31 @@
                             <input type="checkbox" id="edit-msg-approved" style="width: 16px; height: 16px;">
                             <span><i class="fa-solid fa-user-check" style="color: #10b981;"></i> Mensaje revisado y aprobado por humano (no contar borradores automáticos)</span>
                         </label>
+                    </div>
+
+                    <!-- Fase 2: respuesta recibida, memoria comercial y recursos gratuitos -->
+                    <div class="form-group" id="conv-box" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                        <label style="margin-bottom: 6px; display: block;"><i class="fa-solid fa-comments"></i> Respuesta recibida (revisión local, 0 tokens)</label>
+                        <div id="conv-estado" style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;"></div>
+                        <div id="conv-cerrada" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); padding: 8px; border-radius: 6px; font-size: 12px; margin-bottom: 8px;">
+                            <div id="conv-cerrada-texto"></div>
+                            <input type="text" id="conv-reabrir-nota" placeholder="Solo si el negocio lo pidió: describe su nueva solicitud" style="width: 100%; margin: 6px 0; font-size: 12px;">
+                            <button type="button" class="btn btn-secondary" id="btn-conv-reabrir" style="font-size: 11px;">Reabrir por solicitud expresa</button>
+                        </div>
+                        <textarea id="conv-texto" rows="3" placeholder="Pega aquí lo que te respondieron"></textarea>
+                        <button type="button" class="btn btn-secondary" id="btn-conv-analizar" style="font-size: 11px; margin-top: 6px;">Analizar respuesta</button>
+                        <div id="conv-resultado" style="display: none; margin-top: 8px; font-size: 12px;">
+                            <label for="conv-clasif" style="font-size: 11px;">Intención (confírmala o cámbiala)</label>
+                            <select id="conv-clasif" style="width: 100%; font-size: 12px;"></select>
+                            <div id="conv-memoria" style="margin-top: 6px;"></div>
+                            <div id="conv-recursos" style="margin-top: 6px;"></div>
+                            <label for="conv-sugerida" style="font-size: 11px; margin-top: 6px; display: block;">Respuesta sugerida (no se envía sola)</label>
+                            <textarea id="conv-sugerida" rows="2"></textarea>
+                            <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+                                <button type="button" class="btn btn-secondary" id="btn-conv-copiar" style="font-size: 11px;">Copiar respuesta</button>
+                                <button type="button" class="btn btn-primary" id="btn-conv-confirmar" style="font-size: 11px;">Confirmar y guardar</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Seguimiento Comercial Desglosado -->

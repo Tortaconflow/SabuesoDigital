@@ -178,6 +178,44 @@ def init_db(target_path: Path = None):
         _ensure_column(cursor, "negocios", "identidad_revisada_en", "TEXT DEFAULT ''")
         _ensure_column(cursor, "negocios", "identidad_revision_nota", "TEXT DEFAULT ''")
 
+        # Fase 2: conversación, memoria comercial y cierre por rechazo (aditivo).
+        _ensure_column(cursor, "negocios", "prospeccion_cerrada", "INTEGER DEFAULT 0")
+        _ensure_column(cursor, "negocios", "cierre_motivo", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "cierre_fecha", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "prospeccion_reabierta", "INTEGER DEFAULT 0")
+        _ensure_column(cursor, "negocios", "reapertura_nota", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "tipo_relacion", "TEXT DEFAULT 'comercial'")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS interacciones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                negocio_id INTEGER NOT NULL,
+                fecha TEXT NOT NULL,
+                texto TEXT DEFAULT '',              -- redactado: sin correos ni teléfonos
+                clasificacion TEXT NOT NULL,        -- confirmada por una persona
+                clasificacion_sugerida TEXT DEFAULT '',
+                recursos_json TEXT DEFAULT '[]',
+                nota TEXT DEFAULT '',
+                origen TEXT DEFAULT 'pc',
+                evento_uuid TEXT DEFAULT '',
+                FOREIGN KEY (negocio_id) REFERENCES negocios(id) ON DELETE CASCADE
+            );
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS memoria_comercial (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                negocio_id INTEGER NOT NULL,
+                tipo TEXT NOT NULL,                 -- necesidad, servicio_rechazado, servicio_conservado, restriccion, prioridad, dato_corregido
+                servicio TEXT DEFAULT '',
+                texto TEXT DEFAULT '',
+                fuente TEXT DEFAULT 'prospecto',    -- prospecto > humano > qr > regla > ia
+                vigente INTEGER DEFAULT 1,
+                creado_en TEXT NOT NULL,
+                interaccion_id INTEGER,
+                origen TEXT DEFAULT 'pc',
+                FOREIGN KEY (negocio_id) REFERENCES negocios(id) ON DELETE CASCADE
+            );
+        """)
+
         # Bandejas de contacto: «abierto» = se abrió WhatsApp, sin confirmar envío.
         _ensure_column(cursor, "negocios", "bandeja_contacto", "TEXT DEFAULT 'pendiente'")
         cursor.execute("""
@@ -692,6 +730,8 @@ def get_all_negocios(
                c.fuente_whatsapp, c.tipo_canal_principal, c.url_origen as contacto_url_origen, c.fecha_comprobacion as contacto_fecha_comprobacion,
                (SELECT COUNT(*) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS intentos_whatsapp,
                (SELECT MAX(i.creado_en) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS ultimo_intento_whatsapp,
+               (SELECT COUNT(*) FROM auditoria_cambios_datos x WHERE x.negocio_id = n.id AND x.operacion = 'CONFIRMACION_CONTACTO_HUMANO') AS contactos_confirmados_n,
+               (SELECT i.clasificacion FROM interacciones i WHERE i.negocio_id = n.id ORDER BY i.id DESC LIMIT 1) AS ultima_clasificacion,
                a.primer_contacto_fecha, a.fecha_contacto_confirmada, a.canal, a.respuesta,
                a.necesidad_expresada, a.siguiente_accion, a.fecha_seguimiento,
                a.propuesta_enviada, a.propuesta_monto, a.venta_acordada, a.venta_monto, a.ingreso_cobrado
@@ -737,6 +777,8 @@ def get_negocio_detail(negocio_id):
                    c.fuente_whatsapp, c.tipo_canal_principal, c.url_origen as contacto_url_origen, c.fecha_comprobacion as contacto_fecha_comprobacion,
                    (SELECT COUNT(*) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS intentos_whatsapp,
                    (SELECT MAX(i.creado_en) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS ultimo_intento_whatsapp,
+                   (SELECT COUNT(*) FROM auditoria_cambios_datos x WHERE x.negocio_id = n.id AND x.operacion = 'CONFIRMACION_CONTACTO_HUMANO') AS contactos_confirmados_n,
+                   (SELECT i.clasificacion FROM interacciones i WHERE i.negocio_id = n.id ORDER BY i.id DESC LIMIT 1) AS ultima_clasificacion,
                    a.primer_contacto_fecha, a.fecha_contacto_confirmada, a.canal,
                    a.respuesta, a.necesidad_expresada, a.siguiente_accion, a.fecha_seguimiento,
                    a.propuesta_enviada, a.propuesta_monto, a.venta_acordada, a.venta_monto,
@@ -758,6 +800,9 @@ def get_negocio_detail(negocio_id):
         cursor.execute("SELECT * FROM evidencias WHERE negocio_id = ? ORDER BY id DESC", (negocio_id,))
         evidencias = [dict(e) for e in cursor.fetchall()]
         negocio["evidencias"] = evidencias
+        negocio["memoria"] = [dict(m) for m in cursor.execute(
+            "SELECT tipo, servicio, texto, fuente, vigente, creado_en FROM memoria_comercial WHERE negocio_id = ? AND vigente = 1 ORDER BY id",
+            (negocio_id,)).fetchall()]
         return negocio
 
 
@@ -1197,14 +1242,31 @@ def get_dashboard_metrics():
         """)
         contactos_confirmados = cursor.fetchone()[0]
 
-        # 4. Respuestas recibidas
+        # 4. Respuestas recibidas: solo humanas. Automáticas, correcciones o información no son interés comercial.
+        import conversacion
         cursor.execute("""
-            SELECT COUNT(*) FROM negocios n
-            JOIN actividad_comercial a ON a.negocio_id = n.id
+            SELECT a.respuesta,
+                   (SELECT i.clasificacion FROM interacciones i WHERE i.negocio_id = n.id ORDER BY i.id DESC LIMIT 1) AS ultima
+            FROM negocios n JOIN actividad_comercial a ON a.negocio_id = n.id
             WHERE COALESCE(n.en_cuarentena, 0) = 0
-              AND TRIM(COALESCE(a.respuesta, '')) != ''
+              AND (TRIM(COALESCE(a.respuesta, '')) != '' OR EXISTS (SELECT 1 FROM interacciones i2 WHERE i2.negocio_id = n.id))
         """)
-        respuestas_recibidas = cursor.fetchone()[0]
+        respuestas_recibidas = respuestas_automaticas = oportunidades_comerciales = conversaciones_educativas = 0
+        for fila in cursor.fetchall():
+            cat = fila["ultima"] or (conversacion.clasificar_respuesta(fila["respuesta"] or "") or {}).get("categoria", "")
+            info = conversacion.info_categoria(cat) if cat else None
+            if not info:
+                continue
+            if info["cuenta_como_respuesta"]:
+                respuestas_recibidas += 1
+            else:
+                respuestas_automaticas += 1
+            oportunidades_comerciales += 1 if info["oportunidad_comercial"] else 0
+            conversaciones_educativas += 1 if info["conversacion"] == "educativa" else 0
+        cursor.execute("SELECT COUNT(*) FROM interacciones WHERE clasificacion = 'retroalimentacion'")
+        retroalimentaciones = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM negocios WHERE COALESCE(en_cuarentena, 0) = 0 AND COALESCE(prospeccion_cerrada, 0) = 1")
+        prospecciones_cerradas = cursor.fetchone()[0]
 
         # 5. Necesidades confirmadas (expresadas por el cliente)
         cursor.execute("""
@@ -1317,6 +1379,11 @@ def get_dashboard_metrics():
             "mensajes_aprobados": mensajes_aprobados,
             "contactos_confirmados": contactos_confirmados,
             "respuestas_recibidas": respuestas_recibidas,
+            "respuestas_automaticas": respuestas_automaticas,
+            "oportunidades_comerciales": oportunidades_comerciales,
+            "conversaciones_educativas": conversaciones_educativas,
+            "retroalimentaciones": retroalimentaciones,
+            "prospecciones_cerradas": prospecciones_cerradas,
             "necesidades_confirmadas": necesidades_confirmadas,
             "propuestas_enviadas": propuestas_enviadas,
             "propuestas_monto_total": propuestas_monto_total,
@@ -1529,3 +1596,124 @@ def record_identity_review(negocio_id, firma, nota="", origen="pc", fecha=None):
               json.dumps({"identidad_revisada_firma": firma, "identidad_revisada_en": cuando, "origen": origen}, ensure_ascii=False),
               f"Revisión humana de identidad ({origen})"))
         conn.commit()
+
+
+# =========================================================
+# FASE 2: INTERACCIONES, MEMORIA COMERCIAL Y CIERRE POR RECHAZO
+# =========================================================
+
+def _auditar(cursor, negocio_id, operacion, antes, despues, motivo):
+    cursor.execute("""
+        INSERT INTO auditoria_cambios_datos (tabla_afectada, registro_id, negocio_id, operacion,
+            valores_anteriores_json, valores_nuevos_json, motivo)
+        VALUES ('negocios', ?, ?, ?, ?, ?, ?)
+    """, (negocio_id, negocio_id, operacion, json.dumps(antes, ensure_ascii=False), json.dumps(despues, ensure_ascii=False), motivo))
+
+
+def register_interaction(negocio_id, texto, clasificacion, memoria=None, recursos=None, nota="",
+                         origen="pc", fecha=None, evento_uuid="", sugerida=""):
+    """
+    Guarda una respuesta recibida ya clasificada por una persona y aplica sus efectos:
+    rechazo -> cierra la prospección; contratación -> interesado; educativa/orientación -> relación
+    educativa (no comercial); corrección -> vuelve a pedir revisión de identidad.
+    El texto se guarda redactado (sin correos ni teléfonos).
+    """
+    import conversacion
+    info = conversacion.info_categoria(clasificacion)
+    if not info:
+        raise ValueError(f"Clasificación desconocida: {clasificacion!r}.")
+    cuando = (fecha or "").strip() or datetime.now().isoformat(timespec="seconds")
+    texto_guardado = conversacion.redactar(texto)
+    with get_db() as conn:
+        cur = conn.cursor()
+        prev = cur.execute(
+            "SELECT estado_comercial, tipo_relacion, prospeccion_cerrada, identidad_revisada_firma FROM negocios WHERE id = ?",
+            (negocio_id,)).fetchone()
+        if not prev:
+            raise ValueError(f"Prospecto con ID {negocio_id} no encontrado.")
+        cur.execute("""
+            INSERT INTO interacciones (negocio_id, fecha, texto, clasificacion, clasificacion_sugerida, recursos_json, nota, origen, evento_uuid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (negocio_id, cuando, texto_guardado, clasificacion, sugerida or "", json.dumps(list(recursos or [])),
+              (nota or "")[:500], origen, evento_uuid or ""))
+        inter_id = cur.lastrowid
+        for m in memoria or []:
+            cur.execute("""
+                INSERT INTO memoria_comercial (negocio_id, tipo, servicio, texto, fuente, vigente, creado_en, interaccion_id, origen)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+            """, (negocio_id, str(m.get("tipo"))[:40], str(m.get("servicio") or "")[:40],
+                  conversacion.redactar(m.get("texto") or "", 200), str(m.get("fuente") or "prospecto")[:20], cuando, inter_id, origen))
+        cur.execute("UPDATE actividad_comercial SET respuesta = ? WHERE negocio_id = ?", (texto_guardado, negocio_id))
+
+        cambios = {}
+        if info["cierra_prospeccion"]:
+            cambios.update(prospeccion_cerrada=1, prospeccion_reabierta=0, cierre_fecha=cuando,
+                           cierre_motivo=f"Rechazo explícito ({cuando[:10]}).", estado_comercial="no_interesa")
+        if info["oportunidad_comercial"]:
+            cambios["tipo_relacion"] = "comercial"
+            if (prev["estado_comercial"] or "") in ("investigado", "auditado", "contactado"):
+                cambios["estado_comercial"] = "interesado"
+        elif info["conversacion"] == "educativa" and (prev["estado_comercial"] or "") not in ("interesado", "propuesta", "ganado"):
+            cambios["tipo_relacion"] = "educativa"
+        if info["pide_revision_identidad"]:
+            cambios["identidad_revisada_firma"] = ""
+            cur.execute("""
+                INSERT INTO memoria_comercial (negocio_id, tipo, servicio, texto, fuente, vigente, creado_en, interaccion_id, origen)
+                VALUES (?, 'dato_corregido', '', ?, 'prospecto', 1, ?, ?, ?)
+            """, (negocio_id, texto_guardado[:200], cuando, inter_id, origen))
+        if cambios:
+            asignaciones = ", ".join(f"{k} = ?" for k in cambios)
+            cur.execute(f"UPDATE negocios SET {asignaciones}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (*cambios.values(), negocio_id))
+            _auditar(cur, negocio_id, "INTERACCION_" + clasificacion.upper(), dict(prev), cambios,
+                     f"Respuesta clasificada por una persona como «{info['nombre']}» ({origen})")
+        conn.commit()
+        return inter_id
+
+
+def reopen_prospecting(negocio_id, nota, origen="pc", fecha=None):
+    """Reabre una prospección cerrada SOLO ante una nueva solicitud expresa del prospecto (nota obligatoria)."""
+    nota = (nota or "").strip()
+    if len(nota) < 10:
+        raise ValueError("Para reabrir se necesita una nota que explique la nueva solicitud expresa del negocio.")
+    cuando = (fecha or "").strip() or datetime.now().isoformat(timespec="seconds")
+    with get_db() as conn:
+        cur = conn.cursor()
+        prev = cur.execute("SELECT prospeccion_cerrada, estado_comercial, cierre_motivo FROM negocios WHERE id = ?", (negocio_id,)).fetchone()
+        if not prev:
+            raise ValueError(f"Prospecto con ID {negocio_id} no encontrado.")
+        cur.execute("""
+            UPDATE negocios SET prospeccion_cerrada = 0, prospeccion_reabierta = 1, reapertura_nota = ?,
+                   estado_comercial = 'interesado', tipo_relacion = 'comercial', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (nota[:500], negocio_id))
+        _auditar(cur, negocio_id, "REAPERTURA_PROSPECCION", dict(prev), {"prospeccion_reabierta": 1, "nota": nota[:500]},
+                 f"Reapertura por solicitud expresa del negocio ({origen})")
+        conn.commit()
+
+
+def get_interactions(negocio_id, limite=10) -> list:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT fecha, texto, clasificacion, clasificacion_sugerida, recursos_json, origen FROM interacciones WHERE negocio_id = ? ORDER BY id DESC LIMIT ?",
+            (negocio_id, limite)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_memory_by_business() -> dict:
+    with get_db() as conn:
+        out = {}
+        for m in conn.execute("SELECT negocio_id, tipo, servicio, texto, fuente, vigente FROM memoria_comercial WHERE vigente = 1 ORDER BY id"):
+            out.setdefault(m["negocio_id"], []).append({k: m[k] for k in ("tipo", "servicio", "texto", "fuente", "vigente")})
+        return out
+
+
+def get_feedback(limite=200) -> list:
+    """Retroalimentación para detectar mejoras. Sin nombres de negocio: solo giro, fecha y texto redactado."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT i.fecha, i.texto, i.origen, n.sector
+            FROM interacciones i JOIN negocios n ON n.id = i.negocio_id
+            WHERE i.clasificacion = 'retroalimentacion' ORDER BY i.id DESC LIMIT ?
+        """, (limite,)).fetchall()
+        return [dict(r) for r in rows]

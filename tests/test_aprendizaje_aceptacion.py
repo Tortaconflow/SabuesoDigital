@@ -2,7 +2,7 @@
 Pruebas de aceptación — Fase de aprendizaje basado en errores reales.
 
 Cada prueba reproduce un error observado en interacciones reales (ver APRENDIZAJE_ERRORES.md).
-Las que corresponden a fases aún no autorizadas (2 y 3) están marcadas como xfail estricto:
+La que corresponde a la Fase 3 (aún no autorizada) está marcada como xfail estricto:
 documentan el error y fallarán en rojo si alguien las corrige sin actualizar la prueba.
 """
 import re
@@ -147,9 +147,8 @@ def test_caso7_necesidad_confirmada_determina_la_solucion():
 
 
 # ---------------------------------------------------------------------------
-# Fases 2 y 3 (no autorizadas todavía): documentan el error, se esperan en rojo.
+# Fase 2 (casos 3, 4 y 6, ya corregidos) y Fase 3 (caso 5, xfail estricto).
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="Fase 2: memoria comercial (servicios a conservar/rechazados)")
 def test_caso3_si_quiere_conservar_su_pagina_no_se_insiste():
     p = {"id": 505, "nombre": "Hotel Las Palmas", "sector": "Turismo y hospedaje", "municipio": "Puerto Escondido",
          "web": "https://laspalmas.example", "telefono": "9541112222", "servicio_sugerido": "web",
@@ -159,7 +158,6 @@ def test_caso3_si_quiere_conservar_su_pagina_no_se_insiste():
     assert not re.search(r"p[aá]gina|sitio|web", res["mensaje_seguimiento"], re.IGNORECASE)
 
 
-@pytest.mark.xfail(strict=True, reason="Fase 2: clasificación de respuestas")
 def test_caso4_respuesta_automatica_no_cuenta_como_oportunidad(isolated_sqlite_db):
     n = db.save_or_update_negocio({"nombre": "Posada Sol", "municipio": "Mazunte", "whatsapp": "529581112233"})
     db.record_human_contact(n["id"], "whatsapp", "")
@@ -178,7 +176,6 @@ def test_caso5_qr_recibido_se_interpreta_antes_de_recomendar():
     assert "ya cuenta con menú digital" in res["observacion_verificada"].lower()
 
 
-@pytest.mark.xfail(strict=True, reason="Fase 2: rechazo explícito cierra la prospección")
 def test_caso6_rechazo_explicito_cierra_la_prospeccion():
     p = {"id": 707, "nombre": "Cabañas Luna", "sector": "Turismo y hospedaje", "municipio": "Zipolite",
          "web": "https://lunaz.example", "whatsapp": "529583334455", "estado_comercial": "contactado",

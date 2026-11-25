@@ -1,149 +1,516 @@
 {
   "version": 1,
   "descripcion": "Reglas deterministas compartidas por Sabueso PC (reglas.py) y Sabueso Móvil (app.js). Para agregar un giro comercial nuevo, agrega un objeto a «sectores»: no hace falta tocar el código. Ejecuta las pruebas después de editar.",
-
   "mensajes": {
     "objetivo_min": 80,
     "objetivo_max": 180,
     "advertencia_desde": 200,
     "max_preguntas": 1,
     "frases_genericas": [
-      "soluciones integrales", "siguiente nivel", "potenciar su negocio", "potenciar tu negocio",
-      "transformacion digital", "estrategias innovadoras", "aumentar sus ventas", "aumentar tus ventas",
-      "impulsar su marca", "impulsar tu marca", "empresa lider", "no se arrepentira", "oferta unica",
-      "por tiempo limitado", "nos gusto mucho", "excelente opcion", "se nota el cuidado",
-      "le ofrecemos", "te ofrecemos", "los mejores precios", "calidad garantizada"
+      "soluciones integrales",
+      "siguiente nivel",
+      "potenciar su negocio",
+      "potenciar tu negocio",
+      "transformacion digital",
+      "estrategias innovadoras",
+      "aumentar sus ventas",
+      "aumentar tus ventas",
+      "impulsar su marca",
+      "impulsar tu marca",
+      "empresa lider",
+      "no se arrepentira",
+      "oferta unica",
+      "por tiempo limitado",
+      "nos gusto mucho",
+      "excelente opcion",
+      "se nota el cuidado",
+      "le ofrecemos",
+      "te ofrecemos",
+      "los mejores precios",
+      "calidad garantizada"
     ],
     "jerga_tecnica": [
-      "http", "ssl", "responsive", "viewport", "seo", "dns", "html", "css", "auditoria", "meta tag",
-      "landing page", "funnel", "embudo de conversion", "api"
+      "http",
+      "ssl",
+      "responsive",
+      "viewport",
+      "seo",
+      "dns",
+      "html",
+      "css",
+      "auditoria",
+      "meta tag",
+      "landing page",
+      "funnel",
+      "embudo de conversion",
+      "api"
     ]
   },
-
   "identidad": {
     "palabras_genericas_nombre": [
-      "hotel", "hoteles", "posada", "hostal", "hostel", "cabana", "cabanas", "bungalow", "bungalows",
-      "suites", "villas", "resort", "boutique", "casa", "restaurante", "restaurant", "cafe", "cafeteria",
-      "bar", "tienda", "muebles", "muebleria", "mobiliario", "tours", "tour", "agencia", "clinica",
-      "consultorio", "escuela", "colegio", "academia", "despacho", "spa", "de", "del", "la", "el",
-      "los", "las", "y", "en", "e", "the", "sa", "cv", "s", "a", "mx", "oaxaca", "grupo"
+      "hotel",
+      "hoteles",
+      "posada",
+      "hostal",
+      "hostel",
+      "cabana",
+      "cabanas",
+      "bungalow",
+      "bungalows",
+      "suites",
+      "villas",
+      "resort",
+      "boutique",
+      "casa",
+      "restaurante",
+      "restaurant",
+      "cafe",
+      "cafeteria",
+      "bar",
+      "tienda",
+      "muebles",
+      "muebleria",
+      "mobiliario",
+      "tours",
+      "tour",
+      "agencia",
+      "clinica",
+      "consultorio",
+      "escuela",
+      "colegio",
+      "academia",
+      "despacho",
+      "spa",
+      "de",
+      "del",
+      "la",
+      "el",
+      "los",
+      "las",
+      "y",
+      "en",
+      "e",
+      "the",
+      "sa",
+      "cv",
+      "s",
+      "a",
+      "mx",
+      "oaxaca",
+      "grupo"
     ],
     "palabras_saludo": [
-      "hola", "equipo", "de", "del", "al", "la", "el", "los", "las", "buen", "buena", "buenas",
-      "buenos", "dia", "dias", "tardes", "noches", "nuevo", "que", "tal", "como", "estan", "saludos",
-      "senor", "senora", "a", "y", "en", "todo", "todos", "gracias", "por", "aqui", "cidiks", "les", "soy", "somos"
+      "hola",
+      "equipo",
+      "de",
+      "del",
+      "al",
+      "la",
+      "el",
+      "los",
+      "las",
+      "buen",
+      "buena",
+      "buenas",
+      "buenos",
+      "dia",
+      "dias",
+      "tardes",
+      "noches",
+      "nuevo",
+      "que",
+      "tal",
+      "como",
+      "estan",
+      "saludos",
+      "senor",
+      "senora",
+      "a",
+      "y",
+      "en",
+      "todo",
+      "todos",
+      "gracias",
+      "por",
+      "aqui",
+      "cidiks",
+      "les",
+      "soy",
+      "somos"
     ],
     "dominios_directorio": [
-      "tripadvisor", "booking.com", "expedia", "trivago", "hoteles.com", "despegar", "seccionamarilla",
-      "paginasamarillas", "cybo.com", "infobel", "foursquare", "yelp", "restaurantguru", "opentable",
-      "guiaslocales", "mexicoenlasmanos", "all.biz", "directoriodehoteles", "airbnb", "mercadolibre"
+      "tripadvisor",
+      "booking.com",
+      "expedia",
+      "trivago",
+      "hoteles.com",
+      "despegar",
+      "seccionamarilla",
+      "paginasamarillas",
+      "cybo.com",
+      "infobel",
+      "foursquare",
+      "yelp",
+      "restaurantguru",
+      "opentable",
+      "guiaslocales",
+      "mexicoenlasmanos",
+      "all.biz",
+      "directoriodehoteles",
+      "airbnb",
+      "mercadolibre"
     ],
-    "marcadores_url_invalida": [".pdf", "pdfjsviewer", "/plugins/generic/", "viewer.html", "jmcs.org.mx", "localhost", "127.0.0.1"],
-    "marcadores_corporativos": ["hotelescondido.com", "grupohabita", "fourseasons", "banyantree", "camino real", "fiesta americana", "marriott", "hilton", "hyatt"],
+    "marcadores_url_invalida": [
+      ".pdf",
+      "pdfjsviewer",
+      "/plugins/generic/",
+      "viewer.html",
+      "jmcs.org.mx",
+      "localhost",
+      "127.0.0.1"
+    ],
+    "marcadores_corporativos": [
+      "hotelescondido.com",
+      "grupohabita",
+      "fourseasons",
+      "banyantree",
+      "camino real",
+      "fiesta americana",
+      "marriott",
+      "hilton",
+      "hyatt"
+    ],
     "dominios_redes": [
-      "facebook.com", "instagram.com", "linktr.ee", "wa.me", "api.whatsapp.com", "tiktok.com",
-      "google.com", "goo.gl", "maps.app.goo.gl", "youtube.com", "x.com", "twitter.com"
+      "facebook.com",
+      "instagram.com",
+      "linktr.ee",
+      "wa.me",
+      "api.whatsapp.com",
+      "tiktok.com",
+      "google.com",
+      "goo.gl",
+      "maps.app.goo.gl",
+      "youtube.com",
+      "x.com",
+      "twitter.com"
     ]
   },
-
   "localidades": [
-    {"patrones": ["zicatela"], "nombre": "Playa Zicatela, Puerto Escondido"},
-    {"patrones": ["bacocho"], "nombre": "Playa Bacocho, Puerto Escondido"},
-    {"patrones": ["carrizalillo"], "nombre": "Carrizalillo, Puerto Escondido"},
-    {"patrones": ["chahue", "santa cruz", "huatulco"], "nombre": "Bahías de Huatulco"},
-    {"patrones": ["mazunte"], "nombre": "Mazunte, Oaxaca"},
-    {"patrones": ["zipolite"], "nombre": "Zipolite, Oaxaca"},
-    {"patrones": ["san agustinillo", "agustinillo"], "nombre": "San Agustinillo, Oaxaca"},
-    {"patrones": ["puerto angel"], "nombre": "Puerto Ángel, Oaxaca"},
-    {"patrones": ["puerto escondido", "puertoescondido"], "nombre": "Puerto Escondido"}
+    {
+      "patrones": [
+        "zicatela"
+      ],
+      "nombre": "Playa Zicatela, Puerto Escondido"
+    },
+    {
+      "patrones": [
+        "bacocho"
+      ],
+      "nombre": "Playa Bacocho, Puerto Escondido"
+    },
+    {
+      "patrones": [
+        "carrizalillo"
+      ],
+      "nombre": "Carrizalillo, Puerto Escondido"
+    },
+    {
+      "patrones": [
+        "chahue",
+        "santa cruz",
+        "huatulco"
+      ],
+      "nombre": "Bahías de Huatulco"
+    },
+    {
+      "patrones": [
+        "mazunte"
+      ],
+      "nombre": "Mazunte, Oaxaca"
+    },
+    {
+      "patrones": [
+        "zipolite"
+      ],
+      "nombre": "Zipolite, Oaxaca"
+    },
+    {
+      "patrones": [
+        "san agustinillo",
+        "agustinillo"
+      ],
+      "nombre": "San Agustinillo, Oaxaca"
+    },
+    {
+      "patrones": [
+        "puerto angel"
+      ],
+      "nombre": "Puerto Ángel, Oaxaca"
+    },
+    {
+      "patrones": [
+        "puerto escondido",
+        "puertoescondido"
+      ],
+      "nombre": "Puerto Escondido"
+    }
   ],
-
   "servicios": {
     "crm": {
       "nombre": "CRM y seguimiento de clientes",
       "tema_seguimiento": "cómo llevan el seguimiento de sus clientes",
-      "palabras_necesidad": ["crm", "seguimiento a clientes", "seguimiento de clientes", "seguimiento a nuestros clientes", "base de datos de clientes", "cartera de clientes", "dar seguimiento", "clientes frecuentes", "control de clientes"],
+      "palabras_necesidad": [
+        "crm",
+        "seguimiento a clientes",
+        "seguimiento de clientes",
+        "seguimiento a nuestros clientes",
+        "base de datos de clientes",
+        "cartera de clientes",
+        "dar seguimiento",
+        "clientes frecuentes",
+        "control de clientes"
+      ],
       "hipotesis": "Un CRM sencillo podría ayudarles a dar seguimiento ordenado a sus clientes."
     },
     "automatizacion": {
       "nombre": "Automatizaciones",
       "tema_seguimiento": "automatizar la atención de sus mensajes",
-      "palabras_necesidad": ["automatizar", "automatico", "automatica", "responder mas rapido", "mensajes automaticos", "agendar citas", "citas en linea", "pedidos en linea", "recordatorios"],
+      "palabras_necesidad": [
+        "automatizar",
+        "automatico",
+        "automatica",
+        "responder mas rapido",
+        "mensajes automaticos",
+        "agendar citas",
+        "citas en linea",
+        "pedidos en linea",
+        "recordatorios"
+      ],
       "hipotesis": "Automatizar respuestas frecuentes podría liberarles tiempo de atención."
     },
     "ia": {
       "nombre": "Inteligencia artificial aplicada",
       "tema_seguimiento": "un asistente para preguntas frecuentes",
-      "palabras_necesidad": ["inteligencia artificial", "chatbot", "asistente virtual", "bot"],
+      "palabras_necesidad": [
+        "inteligencia artificial",
+        "chatbot",
+        "asistente virtual",
+        "bot"
+      ],
       "hipotesis": "Un asistente para preguntas frecuentes podría reducir mensajes repetitivos."
     },
     "catalogos": {
       "nombre": "Catálogos digitales",
       "tema_seguimiento": "un catálogo digital para WhatsApp",
-      "palabras_necesidad": ["catalogo", "lista de precios", "tarifas", "menu digital", "fotos de productos"],
+      "palabras_necesidad": [
+        "catalogo",
+        "lista de precios",
+        "tarifas",
+        "menu digital",
+        "fotos de productos"
+      ],
       "hipotesis": "Un catálogo digital podría agilizar las respuestas por WhatsApp."
     },
     "web": {
       "nombre": "Desarrollo web",
       "tema_seguimiento": "su página web",
-      "palabras_necesidad": ["pagina web", "sitio web", "pagina", "sitio", "web", "tienda en linea"],
+      "palabras_necesidad": [
+        "pagina web",
+        "sitio web",
+        "pagina",
+        "sitio",
+        "web",
+        "tienda en linea"
+      ],
       "hipotesis": "Una página web rápida conectada a WhatsApp facilitaría el contacto directo."
     },
     "redes_sociales": {
       "nombre": "Redes sociales",
       "tema_seguimiento": "sus redes sociales",
-      "palabras_necesidad": ["redes sociales", "instagram", "facebook", "tiktok", "publicaciones", "contenido"],
+      "palabras_necesidad": [
+        "redes sociales",
+        "instagram",
+        "facebook",
+        "tiktok",
+        "publicaciones",
+        "contenido"
+      ],
       "hipotesis": "Contenido ordenado en redes podría convertir más visitas en mensajes directos."
     },
     "marketing": {
       "nombre": "Marketing digital",
       "tema_seguimiento": "cómo atraer clientes nuevos",
-      "palabras_necesidad": ["marketing", "publicidad", "anuncios", "clientes nuevos", "mas clientes", "promocion", "difusion"],
+      "palabras_necesidad": [
+        "marketing",
+        "publicidad",
+        "anuncios",
+        "clientes nuevos",
+        "mas clientes",
+        "promocion",
+        "difusion"
+      ],
       "hipotesis": "Una estrategia de marketing digital podría atraer clientes nuevos de forma constante."
     },
     "flyers": {
       "nombre": "Promociones y flyers",
       "tema_seguimiento": "promociones de temporada",
-      "palabras_necesidad": ["flyer", "flyers", "promociones", "paquetes", "temporada"],
+      "palabras_necesidad": [
+        "flyer",
+        "flyers",
+        "promociones",
+        "paquetes",
+        "temporada"
+      ],
       "hipotesis": "Piezas visuales de promoción podrían reforzar sus temporadas altas."
     },
     "diseno": {
       "nombre": "Diseño gráfico",
       "tema_seguimiento": "sus materiales de presentación",
-      "palabras_necesidad": ["logo", "diseno", "imagen", "menu impreso", "material impreso", "identidad grafica"],
+      "palabras_necesidad": [
+        "logo",
+        "diseno",
+        "imagen",
+        "menu impreso",
+        "material impreso",
+        "identidad grafica"
+      ],
       "hipotesis": "Materiales gráficos actualizados podrían mejorar la presentación del negocio."
     },
     "consultoria": {
       "nombre": "Consultoría en digitalización",
       "tema_seguimiento": "qué parte de su negocio conviene digitalizar primero",
-      "palabras_necesidad": ["asesoria", "consultoria", "diagnostico", "no se por donde empezar", "digitalizar"],
+      "palabras_necesidad": [
+        "asesoria",
+        "consultoria",
+        "diagnostico",
+        "no se por donde empezar",
+        "digitalizar"
+      ],
       "hipotesis": "Un diagnóstico breve podría ordenar qué digitalizar primero."
     }
   },
-
   "sectores": [
     {
       "id": "hospedaje",
       "nombre": "Turismo y hospedaje",
       "palabras_clave": {
-        "fuertes": ["hotel", "hoteles", "posada", "hostal", "hostel", "cabanas", "bungalow", "bungalows", "glamping", "hospedaje", "casa de huespedes", "resort", "suites", "villas", "motel", "hotel boutique"],
-        "debiles": ["turismo", "boutique", "eco", "campamento", "camp"]
+        "fuertes": [
+          "hotel",
+          "hoteles",
+          "posada",
+          "hostal",
+          "hostel",
+          "cabanas",
+          "bungalow",
+          "bungalows",
+          "glamping",
+          "hospedaje",
+          "casa de huespedes",
+          "resort",
+          "suites",
+          "villas",
+          "motel",
+          "hotel boutique"
+        ],
+        "debiles": [
+          "turismo",
+          "boutique",
+          "eco",
+          "campamento",
+          "camp"
+        ]
       },
-      "vocabulario": ["habitación", "habitaciones", "huésped", "huéspedes", "hospedaje", "reservación", "reservaciones", "estancia", "estancias", "check in", "viajeros"],
+      "vocabulario": [
+        "habitación",
+        "habitaciones",
+        "huésped",
+        "huéspedes",
+        "hospedaje",
+        "reservación",
+        "reservaciones",
+        "estancia",
+        "estancias",
+        "check in",
+        "viajeros"
+      ],
       "frases_propias": [],
       "reglas_servicio": [
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": ["problemas:inaccesible|sin sitio web"], "servicio": "web"},
-        {"si": ["sin_whatsapp", "con_redes"], "servicio": "redes_sociales"},
-        {"si": ["sin_whatsapp", "nombre:surf|rockaway|zicatela|hostal|beach|playa|camp"], "servicio": "redes_sociales"},
-        {"si": ["sin_whatsapp"], "servicio": "web"},
-        {"si": ["nombre:posada real|resort|villas|suites|club|plaza|aldeas"], "servicio": "flyers"},
-        {"si": ["nombre:tour|surf|experiencia|viaje|aventura|mezcal|ecoturismo"], "servicio": "flyers"},
-        {"si": ["nombre:restaurante|cafe|palapa|eco|bistro|bar|mirador"], "servicio": "diseno"},
-        {"si": ["nombre:cabana|bungalow|hostal|hostel|glamping", "con_redes"], "servicio": "redes_sociales"},
-        {"si": ["nombre:boutique|raiz"], "servicio": "catalogos"},
-        {"si": ["nombre:casa|hotel|hospedaje|posada", "con_telefono", "con_email", "con_redes"], "servicio": "diseno"},
-        {"si": [], "servicio": "catalogos"}
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [
+            "problemas:inaccesible|sin sitio web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [
+            "sin_whatsapp",
+            "con_redes"
+          ],
+          "servicio": "redes_sociales"
+        },
+        {
+          "si": [
+            "sin_whatsapp",
+            "nombre:surf|rockaway|zicatela|hostal|beach|playa|camp"
+          ],
+          "servicio": "redes_sociales"
+        },
+        {
+          "si": [
+            "sin_whatsapp"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [
+            "nombre:posada real|resort|villas|suites|club|plaza|aldeas"
+          ],
+          "servicio": "flyers"
+        },
+        {
+          "si": [
+            "nombre:tour|surf|experiencia|viaje|aventura|mezcal|ecoturismo"
+          ],
+          "servicio": "flyers"
+        },
+        {
+          "si": [
+            "nombre:restaurante|cafe|palapa|eco|bistro|bar|mirador"
+          ],
+          "servicio": "diseno"
+        },
+        {
+          "si": [
+            "nombre:cabana|bungalow|hostal|hostel|glamping",
+            "con_redes"
+          ],
+          "servicio": "redes_sociales"
+        },
+        {
+          "si": [
+            "nombre:boutique|raiz"
+          ],
+          "servicio": "catalogos"
+        },
+        {
+          "si": [
+            "nombre:casa|hotel|hospedaje|posada",
+            "con_telefono",
+            "con_email",
+            "con_redes"
+          ],
+          "servicio": "diseno"
+        },
+        {
+          "si": [],
+          "servicio": "catalogos"
+        }
       ],
       "preguntas": {
         "catalogos": {
@@ -156,15 +523,25 @@
           "con_whatsapp": "¿Les gustaría que su página web lleve directo a su WhatsApp?",
           "default": "¿Les gustaría que su página web lleve a WhatsApp o prefieren atender por teléfono?"
         },
-        "flyers": {"default": "¿Preparan promociones de temporada para compartir por WhatsApp y redes?"},
+        "flyers": {
+          "default": "¿Preparan promociones de temporada para compartir por WhatsApp y redes?"
+        },
         "redes_sociales": {
           "con_whatsapp": "¿Las consultas les llegan más por redes sociales o directo por WhatsApp?",
           "default": "¿Prefieren recibir consultas por mensaje en redes o también usan WhatsApp?"
         },
-        "diseno": {"default": "¿Tienen actualizados su menú, guía para huéspedes o fichas de servicios?"},
-        "crm": {"default": "¿Cómo llevan hoy el seguimiento de sus huéspedes frecuentes?"},
-        "automatizacion": {"default": "¿Responden cada consulta de disponibilidad a mano o tienen algo automatizado?"},
-        "marketing": {"default": "¿Cómo atraen hoy a nuevos huéspedes fuera de temporada alta?"}
+        "diseno": {
+          "default": "¿Tienen actualizados su menú, guía para huéspedes o fichas de servicios?"
+        },
+        "crm": {
+          "default": "¿Cómo llevan hoy el seguimiento de sus huéspedes frecuentes?"
+        },
+        "automatizacion": {
+          "default": "¿Responden cada consulta de disponibilidad a mano o tienen algo automatizado?"
+        },
+        "marketing": {
+          "default": "¿Cómo atraen hoy a nuevos huéspedes fuera de temporada alta?"
+        }
       },
       "hipotesis": {
         "catalogos": "Al atender reservaciones directas por WhatsApp, un catálogo de habitaciones y tarifas puede agilizar la respuesta a viajeros.",
@@ -178,22 +555,83 @@
       "id": "alimentos",
       "nombre": "Restaurantes y alimentos",
       "palabras_clave": {
-        "fuertes": ["restaurante", "restaurant", "cafeteria", "fonda", "taqueria", "pizzeria", "cocina economica", "mezcaleria", "cantina", "comedor", "marisqueria", "panaderia", "pasteleria", "antojitos", "restaurantes"],
-        "debiles": ["cafe", "cocina", "palapa", "mirador", "bistro", "bar"]
+        "fuertes": [
+          "restaurante",
+          "restaurant",
+          "cafeteria",
+          "fonda",
+          "taqueria",
+          "pizzeria",
+          "cocina economica",
+          "mezcaleria",
+          "cantina",
+          "comedor",
+          "marisqueria",
+          "panaderia",
+          "pasteleria",
+          "antojitos",
+          "restaurantes"
+        ],
+        "debiles": [
+          "cafe",
+          "cocina",
+          "palapa",
+          "mirador",
+          "bistro",
+          "bar"
+        ]
       },
-      "vocabulario": ["menú", "platillos", "comensales", "mesa", "mesas", "a domicilio", "carta", "reservaciones", "reservación"],
+      "vocabulario": [
+        "menú",
+        "platillos",
+        "comensales",
+        "mesa",
+        "mesas",
+        "a domicilio",
+        "carta",
+        "reservaciones",
+        "reservación"
+      ],
       "frases_propias": [],
       "reglas_servicio": [
-        {"si": ["con_whatsapp"], "servicio": "catalogos"},
-        {"si": ["sin_whatsapp", "con_redes"], "servicio": "redes_sociales"},
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": [], "servicio": "diseno"}
+        {
+          "si": [
+            "con_whatsapp"
+          ],
+          "servicio": "catalogos"
+        },
+        {
+          "si": [
+            "sin_whatsapp",
+            "con_redes"
+          ],
+          "servicio": "redes_sociales"
+        },
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [],
+          "servicio": "diseno"
+        }
       ],
       "preguntas": {
-        "catalogos": {"con_whatsapp": "¿Comparten su menú por WhatsApp como archivo o con fotos en cada mensaje?", "default": "¿Tienen su menú en digital para compartirlo cuando les escriben?"},
-        "redes_sociales": {"default": "¿Sus clientes les escriben más por redes o por WhatsApp para pedir o reservar?"},
-        "diseno": {"default": "¿Tienen actualizado su menú impreso y digital para esta temporada?"},
-        "automatizacion": {"default": "¿Toman los pedidos por WhatsApp a mano o tienen algo automatizado?"}
+        "catalogos": {
+          "con_whatsapp": "¿Comparten su menú por WhatsApp como archivo o con fotos en cada mensaje?",
+          "default": "¿Tienen su menú en digital para compartirlo cuando les escriben?"
+        },
+        "redes_sociales": {
+          "default": "¿Sus clientes les escriben más por redes o por WhatsApp para pedir o reservar?"
+        },
+        "diseno": {
+          "default": "¿Tienen actualizado su menú impreso y digital para esta temporada?"
+        },
+        "automatizacion": {
+          "default": "¿Toman los pedidos por WhatsApp a mano o tienen algo automatizado?"
+        }
       },
       "hipotesis": {
         "catalogos": "Un menú digital para WhatsApp podría agilizar pedidos y preguntas frecuentes.",
@@ -204,21 +642,72 @@
       "id": "tours",
       "nombre": "Tours y experiencias",
       "palabras_clave": {
-        "fuertes": ["tours", "excursiones", "agencia de viajes", "escuela de surf", "surf school", "buceo", "snorkel", "ecoturismo", "avistamiento", "temazcal", "experiencias"],
-        "debiles": ["tour", "turismo", "aventura", "surf", "viajes"]
+        "fuertes": [
+          "tours",
+          "excursiones",
+          "agencia de viajes",
+          "escuela de surf",
+          "surf school",
+          "buceo",
+          "snorkel",
+          "ecoturismo",
+          "avistamiento",
+          "temazcal",
+          "experiencias"
+        ],
+        "debiles": [
+          "tour",
+          "turismo",
+          "aventura",
+          "surf",
+          "viajes"
+        ]
       },
-      "vocabulario": ["recorridos", "recorrido", "excursiones", "salidas", "grupos", "paquetes", "reservaciones"],
+      "vocabulario": [
+        "recorridos",
+        "recorrido",
+        "excursiones",
+        "salidas",
+        "grupos",
+        "paquetes",
+        "reservaciones"
+      ],
       "frases_propias": [],
       "reglas_servicio": [
-        {"si": ["con_whatsapp"], "servicio": "flyers"},
-        {"si": ["sin_whatsapp", "con_redes"], "servicio": "redes_sociales"},
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": [], "servicio": "marketing"}
+        {
+          "si": [
+            "con_whatsapp"
+          ],
+          "servicio": "flyers"
+        },
+        {
+          "si": [
+            "sin_whatsapp",
+            "con_redes"
+          ],
+          "servicio": "redes_sociales"
+        },
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [],
+          "servicio": "marketing"
+        }
       ],
       "preguntas": {
-        "flyers": {"default": "¿Comparten sus salidas y paquetes por WhatsApp con alguna imagen o flyer?"},
-        "redes_sociales": {"default": "¿La gente reserva sus recorridos más por redes o por WhatsApp?"},
-        "marketing": {"default": "¿Cómo consiguen hoy a sus grupos fuera de temporada alta?"}
+        "flyers": {
+          "default": "¿Comparten sus salidas y paquetes por WhatsApp con alguna imagen o flyer?"
+        },
+        "redes_sociales": {
+          "default": "¿La gente reserva sus recorridos más por redes o por WhatsApp?"
+        },
+        "marketing": {
+          "default": "¿Cómo consiguen hoy a sus grupos fuera de temporada alta?"
+        }
       },
       "hipotesis": {
         "flyers": "Piezas visuales de salidas y paquetes podrían facilitar que compartan sus recorridos."
@@ -228,22 +717,79 @@
       "id": "mobiliario",
       "nombre": "Mobiliario y decoración",
       "palabras_clave": {
-        "fuertes": ["muebles", "muebleria", "mobiliario", "carpinteria", "ebanisteria", "colchones", "tapiceria"],
-        "debiles": ["decoracion", "madera", "rustico", "rusticos", "interiores"]
+        "fuertes": [
+          "muebles",
+          "muebleria",
+          "mobiliario",
+          "carpinteria",
+          "ebanisteria",
+          "colchones",
+          "tapiceria"
+        ],
+        "debiles": [
+          "decoracion",
+          "madera",
+          "rustico",
+          "rusticos",
+          "interiores"
+        ]
       },
-      "vocabulario": ["muebles", "piezas", "medidas", "acabados", "pedidos", "fabricación", "entregas"],
-      "frases_propias": ["muebles para habitación", "muebles para habitaciones", "juego de habitación", "recámara", "recámaras"],
+      "vocabulario": [
+        "muebles",
+        "piezas",
+        "medidas",
+        "acabados",
+        "pedidos",
+        "fabricación",
+        "entregas"
+      ],
+      "frases_propias": [
+        "muebles para habitación",
+        "muebles para habitaciones",
+        "juego de habitación",
+        "recámara",
+        "recámaras"
+      ],
       "reglas_servicio": [
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": ["con_whatsapp"], "servicio": "catalogos"},
-        {"si": ["sin_whatsapp", "con_redes"], "servicio": "redes_sociales"},
-        {"si": [], "servicio": "web"}
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [
+            "con_whatsapp"
+          ],
+          "servicio": "catalogos"
+        },
+        {
+          "si": [
+            "sin_whatsapp",
+            "con_redes"
+          ],
+          "servicio": "redes_sociales"
+        },
+        {
+          "si": [],
+          "servicio": "web"
+        }
       ],
       "preguntas": {
-        "catalogos": {"con_whatsapp": "¿Comparten su catálogo de muebles por WhatsApp o mandan fotos en cada mensaje?", "default": "¿Tienen un catálogo de muebles en digital para compartir por mensaje?"},
-        "web": {"sin_web": "¿Sus clientes ven sus muebles solo en redes o les gustaría tener página propia?", "default": "¿Sus clientes pueden ver medidas y acabados de sus muebles en su página?"},
-        "redes_sociales": {"default": "¿Sus clientes les piden cotización más por redes o por WhatsApp?"},
-        "crm": {"default": "¿Cómo dan seguimiento hoy a las cotizaciones de muebles que envían?"}
+        "catalogos": {
+          "con_whatsapp": "¿Comparten su catálogo de muebles por WhatsApp o mandan fotos en cada mensaje?",
+          "default": "¿Tienen un catálogo de muebles en digital para compartir por mensaje?"
+        },
+        "web": {
+          "sin_web": "¿Sus clientes ven sus muebles solo en redes o les gustaría tener página propia?",
+          "default": "¿Sus clientes pueden ver medidas y acabados de sus muebles en su página?"
+        },
+        "redes_sociales": {
+          "default": "¿Sus clientes les piden cotización más por redes o por WhatsApp?"
+        },
+        "crm": {
+          "default": "¿Cómo dan seguimiento hoy a las cotizaciones de muebles que envían?"
+        }
       },
       "hipotesis": {
         "catalogos": "Un catálogo digital de muebles (medidas, acabados y precios) podría agilizar las cotizaciones por WhatsApp.",
@@ -254,19 +800,58 @@
       "id": "comercio",
       "nombre": "Comercio y tiendas",
       "palabras_clave": {
-        "fuertes": ["tienda", "abarrotes", "artesanias", "ferreteria", "papeleria", "joyeria", "zapateria", "minisuper", "distribuidora", "comercio"],
-        "debiles": ["ventas", "productos", "ropa"]
+        "fuertes": [
+          "tienda",
+          "abarrotes",
+          "artesanias",
+          "ferreteria",
+          "papeleria",
+          "joyeria",
+          "zapateria",
+          "minisuper",
+          "distribuidora",
+          "comercio"
+        ],
+        "debiles": [
+          "ventas",
+          "productos",
+          "ropa"
+        ]
       },
-      "vocabulario": ["productos", "inventario", "existencias", "pedidos", "envios"],
+      "vocabulario": [
+        "productos",
+        "inventario",
+        "existencias",
+        "pedidos",
+        "envios"
+      ],
       "frases_propias": [],
       "reglas_servicio": [
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": ["con_whatsapp"], "servicio": "catalogos"},
-        {"si": [], "servicio": "marketing"}
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [
+            "con_whatsapp"
+          ],
+          "servicio": "catalogos"
+        },
+        {
+          "si": [],
+          "servicio": "marketing"
+        }
       ],
       "preguntas": {
-        "catalogos": {"con_whatsapp": "¿Comparten sus productos por WhatsApp con un catálogo o con fotos sueltas?", "default": "¿Tienen un catálogo digital de sus productos para compartir por mensaje?"},
-        "marketing": {"default": "¿Cómo consiguen hoy a sus clientes nuevos fuera de la tienda?"}
+        "catalogos": {
+          "con_whatsapp": "¿Comparten sus productos por WhatsApp con un catálogo o con fotos sueltas?",
+          "default": "¿Tienen un catálogo digital de sus productos para compartir por mensaje?"
+        },
+        "marketing": {
+          "default": "¿Cómo consiguen hoy a sus clientes nuevos fuera de la tienda?"
+        }
       },
       "hipotesis": {}
     },
@@ -274,19 +859,61 @@
       "id": "salud",
       "nombre": "Salud y bienestar",
       "palabras_clave": {
-        "fuertes": ["clinica", "consultorio", "dental", "dentista", "farmacia", "laboratorio", "fisioterapia", "psicologo", "psicologa", "nutriologo", "nutriologa", "optica"],
-        "debiles": ["bienestar", "salud", "yoga", "masajes", "spa"]
+        "fuertes": [
+          "clinica",
+          "consultorio",
+          "dental",
+          "dentista",
+          "farmacia",
+          "laboratorio",
+          "fisioterapia",
+          "psicologo",
+          "psicologa",
+          "nutriologo",
+          "nutriologa",
+          "optica"
+        ],
+        "debiles": [
+          "bienestar",
+          "salud",
+          "yoga",
+          "masajes",
+          "spa"
+        ]
       },
-      "vocabulario": ["citas", "pacientes", "consultas", "tratamientos", "agenda"],
+      "vocabulario": [
+        "citas",
+        "pacientes",
+        "consultas",
+        "tratamientos",
+        "agenda"
+      ],
       "frases_propias": [],
       "reglas_servicio": [
-        {"si": ["con_whatsapp"], "servicio": "automatizacion"},
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": [], "servicio": "crm"}
+        {
+          "si": [
+            "con_whatsapp"
+          ],
+          "servicio": "automatizacion"
+        },
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [],
+          "servicio": "crm"
+        }
       ],
       "preguntas": {
-        "automatizacion": {"default": "¿Agendan las citas por WhatsApp a mano o con alguna herramienta?"},
-        "crm": {"default": "¿Cómo dan seguimiento hoy a sus pacientes después de cada consulta?"}
+        "automatizacion": {
+          "default": "¿Agendan las citas por WhatsApp a mano o con alguna herramienta?"
+        },
+        "crm": {
+          "default": "¿Cómo dan seguimiento hoy a sus pacientes después de cada consulta?"
+        }
       },
       "hipotesis": {}
     },
@@ -294,19 +921,55 @@
       "id": "educacion",
       "nombre": "Educación y capacitación",
       "palabras_clave": {
-        "fuertes": ["escuela", "colegio", "academia", "instituto", "preparatoria", "guarderia", "kinder", "idiomas"],
-        "debiles": ["cursos", "talleres", "clases"]
+        "fuertes": [
+          "escuela",
+          "colegio",
+          "academia",
+          "instituto",
+          "preparatoria",
+          "guarderia",
+          "kinder",
+          "idiomas"
+        ],
+        "debiles": [
+          "cursos",
+          "talleres",
+          "clases"
+        ]
       },
-      "vocabulario": ["alumnos", "inscripciones", "ciclo escolar", "colegiaturas", "clases"],
+      "vocabulario": [
+        "alumnos",
+        "inscripciones",
+        "ciclo escolar",
+        "colegiaturas",
+        "clases"
+      ],
       "frases_propias": [],
       "reglas_servicio": [
-        {"si": ["con_whatsapp"], "servicio": "automatizacion"},
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": [], "servicio": "marketing"}
+        {
+          "si": [
+            "con_whatsapp"
+          ],
+          "servicio": "automatizacion"
+        },
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [],
+          "servicio": "marketing"
+        }
       ],
       "preguntas": {
-        "automatizacion": {"default": "¿Responden a mano las preguntas sobre inscripciones o tienen algo automatizado?"},
-        "marketing": {"default": "¿Cómo dan a conocer hoy sus inscripciones y cursos?"}
+        "automatizacion": {
+          "default": "¿Responden a mano las preguntas sobre inscripciones o tienen algo automatizado?"
+        },
+        "marketing": {
+          "default": "¿Cómo dan a conocer hoy sus inscripciones y cursos?"
+        }
       },
       "hipotesis": {}
     },
@@ -314,34 +977,88 @@
       "id": "servicios_profesionales",
       "nombre": "Servicios profesionales",
       "palabras_clave": {
-        "fuertes": ["despacho", "contadores", "contador", "contable", "abogados", "notaria", "arquitectos", "inmobiliaria", "consultoria"],
-        "debiles": ["agencia", "asesores", "servicios"]
+        "fuertes": [
+          "despacho",
+          "contadores",
+          "contador",
+          "contable",
+          "abogados",
+          "notaria",
+          "arquitectos",
+          "inmobiliaria",
+          "consultoria"
+        ],
+        "debiles": [
+          "agencia",
+          "asesores",
+          "servicios"
+        ]
       },
-      "vocabulario": ["cotizaciones", "expedientes", "asesorías"],
+      "vocabulario": [
+        "cotizaciones",
+        "expedientes",
+        "asesorías"
+      ],
       "frases_propias": [],
       "reglas_servicio": [
-        {"si": ["sin_web"], "servicio": "web"},
-        {"si": ["con_whatsapp"], "servicio": "crm"},
-        {"si": [], "servicio": "consultoria"}
+        {
+          "si": [
+            "sin_web"
+          ],
+          "servicio": "web"
+        },
+        {
+          "si": [
+            "con_whatsapp"
+          ],
+          "servicio": "crm"
+        },
+        {
+          "si": [],
+          "servicio": "consultoria"
+        }
       ],
       "preguntas": {
-        "crm": {"default": "¿Cómo dan seguimiento hoy a los clientes que piden información?"}
+        "crm": {
+          "default": "¿Cómo dan seguimiento hoy a los clientes que piden información?"
+        }
       },
       "hipotesis": {}
     }
   ],
-
   "sector_general": {
     "id": "general",
     "nombre": "General",
-    "palabras_clave": {"fuertes": [], "debiles": []},
+    "palabras_clave": {
+      "fuertes": [],
+      "debiles": []
+    },
     "vocabulario": [],
     "frases_propias": [],
     "reglas_servicio": [
-      {"si": ["sin_web"], "servicio": "web"},
-      {"si": ["con_whatsapp"], "servicio": "catalogos"},
-      {"si": ["sin_whatsapp", "con_redes"], "servicio": "redes_sociales"},
-      {"si": [], "servicio": "consultoria"}
+      {
+        "si": [
+          "sin_web"
+        ],
+        "servicio": "web"
+      },
+      {
+        "si": [
+          "con_whatsapp"
+        ],
+        "servicio": "catalogos"
+      },
+      {
+        "si": [
+          "sin_whatsapp",
+          "con_redes"
+        ],
+        "servicio": "redes_sociales"
+      },
+      {
+        "si": [],
+        "servicio": "consultoria"
+      }
     ],
     "preguntas": {
       "catalogos": {
@@ -353,14 +1070,30 @@
         "con_whatsapp": "¿Les gustaría que su página web lleve directo a su WhatsApp?",
         "default": "¿Les gustaría que su página web lleve a WhatsApp o prefieren atender por teléfono?"
       },
-      "marketing": {"default": "¿Cómo consiguen hoy a sus clientes nuevos?"},
-      "redes_sociales": {"default": "¿Sus clientes les escriben más por redes sociales o por WhatsApp?"},
-      "flyers": {"default": "¿Preparan promociones de temporada para compartir por WhatsApp y redes?"},
-      "diseno": {"default": "¿Tienen actualizados sus materiales de presentación y catálogo?"},
-      "crm": {"default": "¿Cómo llevan hoy el seguimiento de sus clientes?"},
-      "automatizacion": {"default": "¿Responden cada mensaje a mano o tienen algo automatizado?"},
-      "ia": {"default": "¿Les ayudaría un asistente que responda las preguntas frecuentes de sus clientes?"},
-      "consultoria": {"default": "¿Qué parte de su atención o ventas les gustaría digitalizar primero?"},
+      "marketing": {
+        "default": "¿Cómo consiguen hoy a sus clientes nuevos?"
+      },
+      "redes_sociales": {
+        "default": "¿Sus clientes les escriben más por redes sociales o por WhatsApp?"
+      },
+      "flyers": {
+        "default": "¿Preparan promociones de temporada para compartir por WhatsApp y redes?"
+      },
+      "diseno": {
+        "default": "¿Tienen actualizados sus materiales de presentación y catálogo?"
+      },
+      "crm": {
+        "default": "¿Cómo llevan hoy el seguimiento de sus clientes?"
+      },
+      "automatizacion": {
+        "default": "¿Responden cada mensaje a mano o tienen algo automatizado?"
+      },
+      "ia": {
+        "default": "¿Les ayudaría un asistente que responda las preguntas frecuentes de sus clientes?"
+      },
+      "consultoria": {
+        "default": "¿Qué parte de su atención o ventas les gustaría digitalizar primero?"
+      },
       "default": {
         "whatsapp_pendiente": "¿Atienden también por WhatsApp o solo por teléfono?",
         "default": "¿Qué parte de su atención o ventas les gustaría digitalizar primero?"
@@ -368,7 +1101,6 @@
     },
     "hipotesis": {}
   },
-
   "modalidad_predeterminada": "prospeccion_comercial",
   "modalidades": {
     "prospeccion_comercial": {
@@ -399,6 +1131,471 @@
       "pregunta_con_necesidad": "¿Les parece si les comparto una propuesta concreta?",
       "calido": "Hola, equipo de {nombre}. Les escribo de CÍDIKS por aquí. {pregunta}",
       "seguimiento": "Hola de nuevo, equipo de {nombre}. Les escribí hace unos días sobre {tema}. Si no es buen momento, no hay problema."
+    },
+    "orientacion_educativa": {
+      "nombre": "Orientación educativa (sin fines comerciales)",
+      "saludos": [
+        "Hola, {nombre}{en_localidad}.",
+        "Buen día, {nombre}{en_localidad}.",
+        "Hola, {nombre}, buen día."
+      ],
+      "presentacion": "Les escribo de CÍDIKS.",
+      "hechos": {},
+      "con_necesidad": "Les comparto un recurso gratuito: {servicio}.",
+      "pregunta_con_necesidad": "¿Les sirve?",
+      "recurso": "Les comparto un recurso gratuito: {recurso}",
+      "pregunta": "¿Les sirve?",
+      "calido": "Hola, {nombre}. Les escribo de CÍDIKS. {pregunta}",
+      "seguimiento": "Hola de nuevo, {nombre}. ¿Les sirvió el recurso que les compartimos?",
+      "pregunta_sin_recurso": "¿Sobre qué tema les gustaría aprender?"
     }
-  }
+  },
+  "respuestas": {
+    "descripcion": "Clasificación determinista de lo que responde un negocio o persona. Se evalúa en este orden; lo educativo va antes que lo comercial para no convertir automáticamente a quien quiere aprender en prospecto. Siempre es una sugerencia que confirma una persona.",
+    "orden": [
+      "automatica",
+      "rechazo",
+      "correccion",
+      "retroalimentacion",
+      "educativa",
+      "orientacion",
+      "contratacion",
+      "informativa"
+    ],
+    "predeterminada": "humana",
+    "categorias": {
+      "automatica": {
+        "nombre": "Respuesta automática",
+        "patrones": [
+          "gracias por comunicarte",
+          "gracias por comunicarse",
+          "gracias por contactarnos",
+          "gracias por escribirnos",
+          "en breve te atenderemos",
+          "en breve le atenderemos",
+          "en breve te responderemos",
+          "en breve le responderemos",
+          "te responderemos a la brevedad",
+          "le responderemos a la brevedad",
+          "mensaje automatico",
+          "respuesta automatica",
+          "nuestro horario de atencion",
+          "fuera de horario",
+          "selecciona una opcion",
+          "elige una opcion"
+        ],
+        "cuenta_como_respuesta": false,
+        "oportunidad_comercial": false,
+        "conversacion": "ninguna",
+        "respuesta_sugerida": ""
+      },
+      "rechazo": {
+        "nombre": "Rechazo explícito",
+        "patrones": [
+          "no nos interesa",
+          "no me interesa",
+          "no estamos interesados",
+          "no estoy interesado",
+          "no estoy interesada",
+          "no gracias",
+          "no vuelvan a escribir",
+          "no me escriban",
+          "no nos escriban",
+          "dejen de escribir",
+          "no molesten",
+          "no necesitamos nada",
+          "no por ahora",
+          "no por el momento",
+          "borren mi numero",
+          "eliminen mi numero"
+        ],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": false,
+        "conversacion": "cerrada",
+        "cierra_prospeccion": true,
+        "respuesta_sugerida": "Gracias por avisarnos. No les volveremos a escribir. ¡Mucho éxito!"
+      },
+      "correccion": {
+        "nombre": "Corrección de datos",
+        "patrones": [
+          "numero equivocado",
+          "se equivocaron",
+          "se equivoco",
+          "no somos",
+          "este no es",
+          "ese no es",
+          "ya no es",
+          "nos cambiamos",
+          "ya no trabajamos",
+          "ya cerramos",
+          "cerro el negocio",
+          "el nombre correcto",
+          "no es nuestro"
+        ],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": false,
+        "conversacion": "ninguna",
+        "pide_revision_identidad": true,
+        "respuesta_sugerida": "Gracias por la aclaración y disculpen la confusión."
+      },
+      "retroalimentacion": {
+        "nombre": "Retroalimentación",
+        "patrones": [
+          "me gusto",
+          "nos gusto",
+          "me sirvio",
+          "nos sirvio",
+          "no me sirvio",
+          "no nos sirvio",
+          "no entendi",
+          "no se entiende",
+          "esta confuso",
+          "seria bueno",
+          "les sugiero",
+          "sugerencia",
+          "podrian mejorar",
+          "no funciona el enlace",
+          "el enlace no abre",
+          "muy util",
+          "gracias por la guia"
+        ],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": false,
+        "conversacion": "ninguna",
+        "registra_retroalimentacion": true,
+        "respuesta_sugerida": "¡Gracias por el comentario! Nos ayuda a mejorar."
+      },
+      "educativa": {
+        "nombre": "Intención educativa",
+        "patrones": [
+          "quiero aprender",
+          "queremos aprender",
+          "aprender a",
+          "curso",
+          "cursos",
+          "guia",
+          "guias",
+          "taller",
+          "talleres",
+          "tutorial",
+          "capacitacion",
+          "clase",
+          "clases",
+          "donde aprendo",
+          "material gratuito"
+        ],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": false,
+        "conversacion": "educativa",
+        "recomienda_recursos": true,
+        "respuesta_sugerida": "¡Claro! Les comparto un recurso gratuito: {recurso}"
+      },
+      "orientacion": {
+        "nombre": "Orientación",
+        "patrones": [
+          "como puedo",
+          "como le hago",
+          "como hago",
+          "que me recomiendas",
+          "que me recomienda",
+          "que nos recomiendan",
+          "que nos recomiendas",
+          "por donde empiezo",
+          "por donde empezar",
+          "tengo una duda",
+          "me pueden orientar",
+          "me puedes orientar",
+          "orientacion",
+          "asesoria",
+          "consejo",
+          "que necesito para"
+        ],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": false,
+        "conversacion": "educativa",
+        "recomienda_recursos": true,
+        "respuesta_sugerida": "Con gusto. Para empezar les puede servir esto (gratis): {recurso}"
+      },
+      "contratacion": {
+        "nombre": "Interés en contratar",
+        "patrones": [
+          "cuanto cuesta",
+          "cuanto cobran",
+          "cuanto sale",
+          "cuanto costaria",
+          "precio",
+          "precios",
+          "cotizacion",
+          "cotizar",
+          "quiero contratar",
+          "queremos contratar",
+          "me interesa contratar",
+          "agendar",
+          "una llamada",
+          "una reunion",
+          "propuesta"
+        ],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": true,
+        "conversacion": "comercial",
+        "respuesta_sugerida": "¡Con gusto! ¿Les parece si agendamos 15 minutos para entender lo que necesitan?"
+      },
+      "informativa": {
+        "nombre": "Información compartida",
+        "patrones": [
+          "te comparto",
+          "les comparto",
+          "aqui esta",
+          "este es nuestro",
+          "esta es nuestra",
+          "ya tenemos",
+          "ya contamos con",
+          "tenemos pagina",
+          "nuestro catalogo",
+          "nuestro menu",
+          "nuestra pagina"
+        ],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": false,
+        "conversacion": "ninguna",
+        "respuesta_sugerida": "Gracias por compartirlo."
+      },
+      "humana": {
+        "nombre": "Respuesta humana",
+        "patrones": [],
+        "cuenta_como_respuesta": true,
+        "oportunidad_comercial": false,
+        "conversacion": "ninguna",
+        "respuesta_sugerida": ""
+      }
+    }
+  },
+  "memoria": {
+    "descripcion": "Extracción literal de lo que dijo el prospecto (nunca se infieren presupuestos ni características). Prioridad de fuentes: prospecto > humano > qr > regla > ia.",
+    "jerarquia_fuentes": [
+      "prospecto",
+      "humano",
+      "qr",
+      "regla",
+      "ia"
+    ],
+    "conservar": [
+      "conservar",
+      "conservarla",
+      "conservarlo",
+      "contentos con",
+      "contento con",
+      "contenta con",
+      "ya tenemos",
+      "ya contamos con",
+      "estamos bien con",
+      "no queremos cambiar",
+      "nos funciona bien",
+      "funciona bien"
+    ],
+    "rechazar": [
+      "no necesitamos",
+      "no nos interesa",
+      "no me interesa",
+      "no queremos",
+      "no requerimos",
+      "no buscamos"
+    ],
+    "necesidad": [
+      "necesitamos",
+      "necesito",
+      "nos interesa",
+      "me interesa",
+      "queremos",
+      "quiero",
+      "buscamos",
+      "busco",
+      "nos gustaria",
+      "me gustaria",
+      "nos hace falta",
+      "solo nos interesa",
+      "cuanto cuesta",
+      "cuanto cobran",
+      "cotizacion",
+      "cotizar",
+      "precio"
+    ],
+    "restriccion": [
+      "no tenemos presupuesto",
+      "sin presupuesto",
+      "presupuesto limitado",
+      "presupuesto bajo",
+      "no podemos pagar",
+      "no tenemos tiempo",
+      "solo fines de semana",
+      "despues de las",
+      "por las tardes",
+      "por las mananas"
+    ],
+    "prioridad": [
+      "lo mas urgente",
+      "urgente",
+      "lo que mas nos importa",
+      "primero necesitamos",
+      "prioridad"
+    ]
+  },
+  "seguimiento": {
+    "dias_minimos": 5,
+    "dias_sugeridos_hasta": 7,
+    "maximo": 1
+  },
+  "recursos_gratuitos": [
+    {
+      "id": "cidiks_comunidad",
+      "titulo": "CÍDIKS Comunidad: rutas gratuitas para emprender",
+      "url": "https://reilycastro.com/comunidad/",
+      "origen": "cidiks",
+      "condiciones": "Gratuito, sin registro",
+      "intenciones": [
+        "educativa",
+        "orientacion"
+      ],
+      "temas": [
+        "catalogos",
+        "marketing",
+        "redes_sociales",
+        "web",
+        "automatizacion",
+        "crm",
+        "consultoria"
+      ],
+      "revisado": "2026-11-24",
+      "revisar_antes": "2027-02-21"
+    },
+    {
+      "id": "cidiks_conocimiento",
+      "titulo": "CÍDIKS Conocimiento: guías prácticas",
+      "url": "https://reilycastro.com/conocimiento/",
+      "origen": "cidiks",
+      "condiciones": "Gratuito, sin registro",
+      "intenciones": [
+        "educativa"
+      ],
+      "temas": [
+        "web",
+        "automatizacion",
+        "marketing",
+        "redes_sociales"
+      ],
+      "revisado": "2026-11-24",
+      "revisar_antes": "2027-02-21"
+    },
+    {
+      "id": "cidiks_asesor",
+      "titulo": "Asesor IA de CÍDIKS (orientación gratuita con límites)",
+      "url": "https://reilycastro.com/asesor-ia/",
+      "origen": "cidiks",
+      "condiciones": "Gratuito dentro de límites",
+      "intenciones": [
+        "orientacion"
+      ],
+      "temas": [
+        "consultoria",
+        "web",
+        "automatizacion",
+        "ia"
+      ],
+      "revisado": "2026-11-24",
+      "revisar_antes": "2027-02-21",
+      "palabras": [
+        "asesor",
+        "asesoria",
+        "diagnostico"
+      ]
+    },
+    {
+      "id": "meta_whatsapp",
+      "titulo": "Meta Blueprint: Usa WhatsApp para un negocio",
+      "url": "https://www.facebookblueprint.com/student/path/211935-use-whatsapp-business",
+      "origen": "externo",
+      "condiciones": "Gratuito, 18 min; puede pedir cuenta de Facebook",
+      "intenciones": [
+        "educativa",
+        "orientacion"
+      ],
+      "temas": [
+        "catalogos",
+        "automatizacion"
+      ],
+      "revisado": "2026-11-23",
+      "revisar_antes": "2027-02-21",
+      "palabras": [
+        "whatsapp business",
+        "whatsapp",
+        "catalogo de whatsapp"
+      ]
+    },
+    {
+      "id": "hubspot_marketing",
+      "titulo": "HubSpot Academy: Marketing digital",
+      "url": "https://academy.hubspot.com/es/courses/digital-marketing",
+      "origen": "externo",
+      "condiciones": "Gratuito, 5 h 45 min; requiere cuenta",
+      "intenciones": [
+        "educativa"
+      ],
+      "temas": [
+        "marketing",
+        "redes_sociales",
+        "crm"
+      ],
+      "revisado": "2026-11-23",
+      "revisar_antes": "2027-02-21",
+      "palabras": [
+        "marketing digital",
+        "hubspot",
+        "embudo de ventas"
+      ]
+    },
+    {
+      "id": "microsoft_ia",
+      "titulo": "Microsoft Learn: Trabaje de forma más inteligente con IA",
+      "url": "https://learn.microsoft.com/es-mx/training/paths/work-smarter-with-ai/",
+      "origen": "externo",
+      "condiciones": "Gratuito, lectura sin cuenta",
+      "intenciones": [
+        "educativa",
+        "orientacion"
+      ],
+      "temas": [
+        "ia",
+        "automatizacion"
+      ],
+      "revisado": "2026-11-23",
+      "revisar_antes": "2027-02-21",
+      "palabras": [
+        "inteligencia artificial",
+        "chatgpt",
+        "copilot",
+        "herramientas de ia"
+      ]
+    },
+    {
+      "id": "google_contenido",
+      "titulo": "Google Skillshop: Promociona una empresa con contenido",
+      "url": "https://skillshop.exceedlms.com/student/collection/711435-promote-with-content?locale=es",
+      "origen": "externo",
+      "condiciones": "Gratuito, 3 h; cuenta Google",
+      "intenciones": [
+        "educativa"
+      ],
+      "temas": [
+        "marketing",
+        "redes_sociales"
+      ],
+      "revisado": "2026-11-23",
+      "revisar_antes": "2027-02-21",
+      "palabras": [
+        "contenido",
+        "publicaciones",
+        "google"
+      ]
+    }
+  ]
 }

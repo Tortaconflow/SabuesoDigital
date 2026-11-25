@@ -18,6 +18,7 @@ Reglas:
 """
 import json
 
+import conversacion
 import reglas as R
 import validacion
 
@@ -127,8 +128,15 @@ def _seleccionar_servicio(prospect: dict, honor_explicit: bool = True) -> tuple:
         if por_necesidad:
             return por_necesidad, "necesidad_confirmada"
 
+    # Memoria del prospecto: sus necesidades mandan; lo que rechazó o quiere conservar no se propone.
+    memoria = conversacion.memoria_efectiva(prospect)
+    if memoria["necesidades"]:
+        return memoria["necesidades"][0], "necesidad_confirmada"
+    excluidos = memoria["excluidos"]
+
     forzado = bool(honor_explicit and prospect.get("_force_explicit")
-                   and explicit in R.servicios_validos() and explicit not in _ESPECIALES)
+                   and explicit in R.servicios_validos() and explicit not in _ESPECIALES
+                   and explicit not in excluidos)
     investigate, _ = needs_more_investigation(prospect)
     if investigate and not forzado:
         return "investigar_mas", "reglas"
@@ -136,7 +144,7 @@ def _seleccionar_servicio(prospect: dict, honor_explicit: bool = True) -> tuple:
         return explicit, "eleccion_humana"
 
     sector = R.sector_de_prospecto(prospect)["sector"]
-    return R.servicio_por_reglas(sector, prospect), "reglas_sector"
+    return R.servicio_por_reglas(sector, prospect, excluidos), "reglas_sector"
 
 
 def select_suggested_service(prospect: dict, honor_explicit: bool = True) -> str:
@@ -220,7 +228,13 @@ def build_commercial_hypothesis(prospect: dict, servicio_key: str, sector: dict 
     r = R.cargar_reglas()
     servicio = r["servicios"].get(servicio_key)
     necesidad = (prospect.get("necesidad_expresada") or "").strip()
+    if fuente == "relacion_educativa":
+        return "Conversación educativa: no es una oportunidad comercial. Se comparten recursos gratuitos."
     if fuente == "necesidad_confirmada" and servicio:
+        if not necesidad:
+            frases = [m["texto"] for m in conversacion.memoria_efectiva(prospect)["items"]
+                      if m.get("tipo") == "necesidad" and m.get("servicio") == servicio_key]
+            necesidad = frases[0] if frases else servicio["nombre"]
         return f"Necesidad confirmada por el negocio: «{necesidad}». Solución a conversar: {servicio['nombre']}."
     if necesidad:
         return f"Necesidad confirmada por el negocio: «{necesidad}». No se reconoció automáticamente la solución; revísala antes de proponer."
@@ -308,6 +322,31 @@ def componer_mensajes(prospect: dict, sector: dict, servicio_key: str, fuente: s
     }
 
 
+def componer_educativo(prospect: dict, servicio_key: str) -> dict:
+    """Relación educativa: saludo breve + un recurso gratuito pertinente. Nunca una propuesta comercial."""
+    r = R.cargar_reglas()
+    mod = r["modalidades"]["orientacion_educativa"]
+    nombre = clean_business_name(prospect.get("nombre") or prospect.get("Nombre del negocio") or "Equipo")
+    loc = R.localidad(prospect)
+    plantilla = mod["saludos"][indice_estilo(prospect, len(mod["saludos"]))]
+    saludo = R.rellenar(plantilla, nombre=nombre, en_localidad=f" en {loc}" if loc else "")
+    recursos = conversacion.recursos_sugeridos("educativa", [servicio_key], prospect.get("_hoy"), maximo=1)
+    if recursos:
+        cuerpo = R.rellenar(mod["recurso"], recurso=f"{recursos[0]['titulo']} {recursos[0]['url']}")
+        frio = " ".join([saludo, mod["presentacion"], cuerpo, mod["pregunta"]])
+        preg = mod["pregunta"]
+    else:
+        preg = mod["pregunta_sin_recurso"]
+        frio = " ".join([saludo, mod["presentacion"], preg])
+    return {
+        "pregunta": preg,
+        "mensaje_personalizado": frio.strip(),
+        "mensaje_calido": R.rellenar(mod["calido"], nombre=nombre, pregunta=preg).strip(),
+        "mensaje_seguimiento": R.rellenar(mod["seguimiento"], nombre=nombre).strip(),
+        "recursos": recursos,
+    }
+
+
 def generate_cidiks_messages(prospect: dict, evidencias: list = None, use_ai: bool = False,
                              api_key: str = None, contexto: list = None, indice: dict = None) -> dict:
     """
@@ -323,6 +362,9 @@ def generate_cidiks_messages(prospect: dict, evidencias: list = None, use_ai: bo
     identidad = validacion.analizar_identidad(prospect, contexto, r, indice)
     sector = _sector_para_redactar(prospect, identidad)
     servicio_key, fuente = _seleccionar_servicio(prospect, honor_explicit=True)
+    educativa = (prospect.get("tipo_relacion") or "") == "educativa" and servicio_key not in _ESPECIALES
+    if educativa:
+        fuente = "relacion_educativa"
     servicio_nombre = (r["servicios"].get(servicio_key) or _ESPECIALES.get(servicio_key) or {}).get("nombre", "")
 
     observacion = build_verified_observation(prospect, evidencias)
@@ -352,6 +394,14 @@ def generate_cidiks_messages(prospect: dict, evidencias: list = None, use_ai: bo
         "evidencia_origen": observacion,
         "consumo_tokens": 0,
         "motor": "reglas_deterministas",
+        "conversacion": {
+            "ultima_clasificacion": conversacion.ultima_clasificacion(prospect, r),
+            "tipo_relacion": "educativa" if educativa else "comercial",
+            "prospeccion": conversacion.estado_prospeccion(prospect, r),
+            "memoria": {k: v for k, v in conversacion.memoria_efectiva(prospect, r).items() if k != "items"},
+        },
+        "seguimiento": conversacion.estado_seguimiento(prospect, r=r),
+        "recursos_sugeridos": [],
         "revision": {
             "identidad": identidad["hallazgos"],
             "identidad_requiere_revision": identidad["requiere_revision"],
@@ -376,6 +426,13 @@ def generate_cidiks_messages(prospect: dict, evidencias: list = None, use_ai: bo
             f"Acción recomendada: Verificar primero que {nombre} opere activamente y confirmar un canal oficial antes de redactar un mensaje.",
             "IDENTIDAD_NO_VERIFICADA", ident_ok=is_verified)
 
+    cierre = conversacion.estado_prospeccion(prospect, r)
+    if cierre["cerrada"]:
+        return bloqueado(
+            f"[BLOQUEADO — PROSPECCIÓN CERRADA]\nMotivo: {cierre['motivo']}\n"
+            f"No se envían mensajes comerciales ni seguimientos a {nombre}. Solo se reabre si el negocio lo solicita expresamente.",
+            "PROSPECCION_CERRADA")
+
     if servicio_key == "investigar_mas":
         return bloqueado(
             f"[RECOMENDACIÓN: INVESTIGAR MÁS ANTES DE CONTACTAR]\nObservación: {observacion}\nNota comercial: {hipotesis}\n"
@@ -389,13 +446,18 @@ def generate_cidiks_messages(prospect: dict, evidencias: list = None, use_ai: bo
             "En la ficha: «Confirmar identidad» o corrige el nombre o el giro.",
             "REQUIERE_REVISION_HUMANA", pregunta=build_adapted_question(prospect, servicio_key, sector))
 
-    mensajes = componer_mensajes(prospect, sector, servicio_key, fuente)
+    if educativa:
+        mensajes = componer_educativo(prospect, servicio_key)
+        base["recursos_sugeridos"] = mensajes["recursos"]
+    else:
+        mensajes = componer_mensajes(prospect, sector, servicio_key, fuente)
     revision_msgs = {}
     for campo, tipo in (("mensaje_personalizado", "inicial"), ("mensaje_calido", "inicial"), ("mensaje_seguimiento", "seguimiento")):
         revision_msgs[campo] = validacion.revisar_mensaje(mensajes[campo], prospect, contexto, tipo, r)
     base["revision"]["mensajes"] = revision_msgs
     base.update({
-        "bloqueado_envio": any(v["bloqueado"] for v in revision_msgs.values()),
+        # El envío se evalúa sobre el primer mensaje; el seguimiento tiene su propia regla (base["seguimiento"]).
+        "bloqueado_envio": revision_msgs["mensaje_personalizado"]["bloqueado"],
         "tipo_observacion": "OBSERVACION_COMPROBADA" if verificadas else "HIPOTESIS_COMERCIAL",
         "pregunta_comercial": mensajes["pregunta"],
         "mensaje_personalizado": mensajes["mensaje_personalizado"],
