@@ -311,12 +311,14 @@
 
                 <!-- Quick Filter Buttons: Bandejas WhatsApp-First -->
                 <div class="quick-filters" id="quick-filters">
-                    <button class="filter-chip active" data-filter="wa_main"><i class="fa-brands fa-whatsapp" style="color: #10b981;"></i> Bandeja WhatsApp (<span id="count-wa-tray">0</span>)</button>
+                    <button class="filter-chip active" data-filter="wa_main" title="Prospectos con WhatsApp que aún no abres ni contactas. Cada número aparece una sola vez."><i class="fa-brands fa-whatsapp" style="color: #10b981;"></i> Pendientes WhatsApp (<span id="count-wa-tray">0</span>)</button>
+                    <button class="filter-chip" data-filter="opened" title="Abriste WhatsApp pero todavía no confirmas que enviaste el mensaje."><i class="fa-solid fa-envelope-open"></i> Abiertos (<span id="count-open-tray">0</span>)</button>
                     <button class="filter-chip" data-filter="other_channels"><i class="fa-solid fa-address-book"></i> Otros canales (<span id="count-other-tray">0</span>)</button>
                     <button class="filter-chip" data-filter="all"><i class="fa-solid fa-list"></i> Todos</button>
                     <button class="filter-chip" data-filter="top10"><i class="fa-solid fa-inbox"></i> Top 10 Sesión</button>
                     <button class="filter-chip" data-filter="contacted"><i class="fa-solid fa-paper-plane"></i> Contactados</button>
                     <button class="filter-chip" data-filter="favorites"><i class="fa-solid fa-star"></i> Favoritos</button>
+                    <span id="dup-hidden-note" style="display: none; font-size: 11px; color: var(--text-muted); align-self: center;"></span>
                 </div>
 
                 <!-- Real-time Progress Logger -->
@@ -544,14 +546,21 @@
                         Copiar el mensaje NO lo marca como enviado. Confirma el contacto únicamente tras enviarlo.
                     </p>
                     <div class="outreach-buttons" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
-                        <a href="#" target="_blank" class="btn btn-wa btn-outreach" id="link-wa">
-                            <i class="fa-brands fa-whatsapp"></i> Abrir WhatsApp
+                        <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-wa btn-outreach" id="link-wa">
+                            <i class="fa-brands fa-whatsapp"></i> Abrir en WhatsApp
                         </a>
                         <a href="#" class="btn btn-mail btn-outreach" id="link-mail">
                             <i class="fa-solid fa-envelope"></i> Abrir Correo
                         </a>
                         <button class="btn btn-copy" id="btn-copy-msg">
                             <i class="fa-solid fa-copy"></i> Copiar Mensaje
+                        </button>
+                    </div>
+
+                    <div id="wa-open-state" style="display: none; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.4); padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 10px;">
+                        <div id="wa-open-state-text"><i class="fa-solid fa-envelope-open"></i> En <strong>Abiertos</strong>: abriste WhatsApp, pero el envío no está confirmado.</div>
+                        <button type="button" class="btn btn-secondary" id="btn-return-pending" style="margin-top: 6px; font-size: 11px;">
+                            <i class="fa-solid fa-rotate-left"></i> Regresar a Pendientes
                         </button>
                     </div>
 

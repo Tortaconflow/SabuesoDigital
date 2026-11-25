@@ -1,5 +1,21 @@
 # Registro de Cambios: Sabueso Digital 2.0 (CÍDIKS Sales Engine)
 
+## [2.1.1] - 2026-11-25 — Prospectos repetidos y bandeja «Abiertos»
+
+### Corregido
+- **Prospectos repetidos:** la búsqueda solo descartaba por dominio web; ahora también descarta números de WhatsApp/teléfono que ya existen (en cualquier formato) y nunca vuelve a guardar un número que está en Pendientes, Abiertos o Contactados.
+- **Identidad por número (`contact_identity.py`):** comparación por número E.164 (+52…), sin espacios, guiones ni paréntesis. Si falta el código de país se usa el país del prospecto (campo `pais` o ubicación mexicana reconocible); números ambiguos o inválidos nunca se fusionan.
+- **Registros anteriores respetados:** nada se borra ni se fusiona. Los registros viejos con un número repetido solo se ocultan de Pendientes (siguen en «Todos») y se muestra cuántos están ocultos.
+
+### Nuevo flujo Pendientes → Abiertos → Contactados (PC y Sabueso Móvil)
+- «Abrir en WhatsApp» registra el intento (tabla `intentos_contacto`) y mueve el prospecto a **Abiertos**, conservando ficha y borrador. No confirma el envío ni cambia el estado comercial.
+- Desde Abiertos se puede volver a abrir WhatsApp o **Regresar a Pendientes** (el historial de intentos se conserva y el prospecto aparece una sola vez).
+- «Contactado» sigue llegando solo por la confirmación humana existente (`record_human_contact` / «Confirmar contacto»).
+- Sabueso Móvil 1.1.0: bandejas, borrador persistente, diario síncrono para no perder el intento si iOS congela la app, alta manual bloqueada si el número ya existe y eventos `whatsapp_abierto` / `regresar_pendientes` sincronizados con la PC.
+
+### Pruebas
+- `tests/test_contact_flow.py`: 18 pruebas (formatos equivalentes, ambiguos sin fusionar, abrir sin marcar enviado, regresar una sola vez, confirmar y no reaparecer en búsquedas nuevas, eventos del celular).
+
 ## [2.1.0] - 2026-11-24 — Sabueso Móvil (iPhone)
 
 ### Nuevo

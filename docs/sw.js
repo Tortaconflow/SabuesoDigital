@@ -4,7 +4,7 @@
  * Solo cachea los archivos de la app; los datos de prospectos viven en IndexedDB del celular
  * y nunca pasan por este archivo ni por ningún servidor.
  */
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const CACHE = `sabueso-movil-${VERSION}`;
 const ARCHIVOS = [
     "./",

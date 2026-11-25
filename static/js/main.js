@@ -394,6 +394,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function isPendingWhatsApp(p) {
+        const bandeja = p.bandeja || "pendiente";
+        return isWhatsAppProspect(p) && bandeja === "pendiente" && !p.oculto_en_pendientes;
+    }
+
     function isWhatsAppProspect(p) {
         const st = p.whatsapp_estado || "";
         if (st === "WHATSAPP_COMPROBADO" || st === "confirmado") return true;
@@ -408,8 +413,17 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderTable() {
         if (!tableBody) return;
 
-        // Actualizar contadores de bandejas
-        const waCount = prospects.filter(p => isWhatsAppProspect(p)).length;
+        // Actualizar contadores de bandejas (Pendientes sin números repetidos ni ya abiertos/contactados)
+        const waCount = prospects.filter(p => isPendingWhatsApp(p)).length;
+        const openCount = prospects.filter(p => p.bandeja === "abierto").length;
+        const hiddenDupCount = prospects.filter(p => p.oculto_en_pendientes).length;
+        const countOpenTrayEl = document.getElementById("count-open-tray");
+        if (countOpenTrayEl) countOpenTrayEl.textContent = openCount;
+        const dupNoteEl = document.getElementById("dup-hidden-note");
+        if (dupNoteEl) {
+            dupNoteEl.style.display = hiddenDupCount ? "inline" : "none";
+            dupNoteEl.textContent = `${hiddenDupCount} oculto(s) en Pendientes: su número ya está en otro prospecto (se conservan en «Todos»).`;
+        }
         const otherCount = prospects.filter(p => !isWhatsAppProspect(p)).length;
         const countWaTrayEl = document.getElementById("count-wa-tray");
         const countOtherTrayEl = document.getElementById("count-other-tray");
@@ -425,7 +439,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Apply filters: Bandejas WhatsApp-First
         if (activeFilter === "wa_main") {
-            filtered = filtered.filter(p => isWhatsAppProspect(p));
+            filtered = filtered.filter(p => isPendingWhatsApp(p));
             // Ordenar: primero los comprobados, luego pendientes
             filtered.sort((a, b) => {
                 const aComp = (a.whatsapp_estado === "WHATSAPP_COMPROBADO" || a.whatsapp_estado === "confirmado") ? 1 : 0;
@@ -438,8 +452,10 @@ document.addEventListener("DOMContentLoaded", () => {
             filtered = filtered.sort((a, b) => (b.puntuacion || 0) - (a.puntuacion || 0)).slice(0, 10);
         } else if (activeFilter === "critical") {
             filtered = filtered.filter(p => p.prioridad === "critical" || (p.puntuacion && p.puntuacion >= 85));
+        } else if (activeFilter === "opened") {
+            filtered = filtered.filter(p => p.bandeja === "abierto");
         } else if (activeFilter === "contacted") {
-            filtered = filtered.filter(p => p.estado_comercial === "contactado" || p.fecha_contacto_confirmada);
+            filtered = filtered.filter(p => p.bandeja === "contactado" || p.estado_comercial === "contactado" || p.fecha_contacto_confirmada);
         } else if (activeFilter === "favorites") {
             filtered = filtered.filter(p => favorites.includes(String(p.id)) || favorites.includes(p.web || p.nombre));
         }
@@ -899,7 +915,21 @@ document.addEventListener("DOMContentLoaded", () => {
         return false;
     }
 
+    function updateOpenState(p) {
+        const box = document.getElementById("wa-open-state");
+        if (!box) return;
+        const abierto = p && p.bandeja === "abierto";
+        box.style.display = abierto ? "block" : "none";
+        const txt = document.getElementById("wa-open-state-text");
+        if (abierto && txt) {
+            const veces = parseInt(p.intentos_whatsapp, 10) || 1;
+            const cuando = p.ultimo_intento_whatsapp ? new Date(p.ultimo_intento_whatsapp).toLocaleString("es-MX") : "";
+            txt.innerHTML = `<i class="fa-solid fa-envelope-open"></i> En <strong>Abiertos</strong>: abriste WhatsApp ${escapeHtml(veces)} vez/veces${cuando ? " (último: " + escapeHtml(cuando) + ")" : ""}. Abrirlo no confirma el envío.`;
+        }
+    }
+
     function updateOutreachLinks(p) {
+        updateOpenState(p);
         const msg = editMessage ? editMessage.value : "";
         const blocked = isProspectBlocked(p, msg);
         const phone = p.whatsapp || p.telefono || "";
@@ -968,6 +998,64 @@ document.addEventListener("DOMContentLoaded", () => {
                     btnCopyMsg.innerHTML = '<i class="fa-solid fa-copy"></i> Copiar Mensaje';
                 }, 2000);
             });
+        });
+    }
+
+    function applyTrayUpdate(updated) {
+        if (!updated) return;
+        const idx = prospects.findIndex(x => x.id === updated.id);
+        if (idx !== -1) {
+            ["bandeja", "bandeja_contacto", "intentos_whatsapp", "ultimo_intento_whatsapp", "oculto_en_pendientes", "duplicado_de", "estado_comercial", "fecha_contacto_confirmada"]
+                .forEach(k => { prospects[idx][k] = updated[k]; });
+            updateOpenState(prospects[idx]);
+        }
+        renderTable();
+    }
+
+    if (linkWa) {
+        linkWa.addEventListener("click", (e) => {
+            const p = prospects.find(x => x.id === selectedProspectId);
+            const msg = editMessage ? editMessage.value : "";
+            if (!p || isProspectBlocked(p, msg) || linkWa.getAttribute("href") === "#") {
+                e.preventDefault();
+                return;
+            }
+            // El enlace se abre normalmente; en paralelo se registra el intento (no es confirmación).
+            fetch("/api/prospects/whatsapp-open", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: p.id, mensaje: msg }),
+                keepalive: true
+            })
+                .then(res => res.json().then(data => ({ ok: res.ok, data })))
+                .then(({ ok, data }) => {
+                    if (!ok) throw new Error(data.error || "No se pudo registrar el intento.");
+                    applyTrayUpdate(data.prospecto);
+                    showToast("info", "Movido a Abiertos", "Abrir WhatsApp no confirma el envío. Cuando lo envíes, confirma el contacto.");
+                })
+                .catch(err => showToast("error", "Intento no registrado", err.message));
+        });
+    }
+
+    const btnReturnPending = document.getElementById("btn-return-pending");
+    if (btnReturnPending) {
+        btnReturnPending.addEventListener("click", async () => {
+            if (!selectedProspectId) return;
+            try {
+                const res = await fetch("/api/prospects/return-pending", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: selectedProspectId })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "No se pudo regresar a Pendientes.");
+                await loadProspects();
+                const p = prospects.find(x => x.id === selectedProspectId);
+                updateOpenState(p);
+                showToast("success", "De vuelta en Pendientes", "Su historial de intentos se conserva.");
+            } catch (err) {
+                showToast("error", "Error", err.message);
+            }
         });
     }
 

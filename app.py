@@ -30,6 +30,7 @@ import evidence_engine
 import copilot
 import importer
 import movil_sync
+import contact_identity
 
 # Configuración de codificación y registro en log
 try:
@@ -699,9 +700,14 @@ def api_prospects_get():
         only_quarantine=only_quarantine
     )
 
+    # Bandejas Pendientes/Abiertos/Contactados y duplicados por número (sobre todos los activos)
+    activos = negocios if not (status or priority or search or include_quarantine or only_quarantine) else db.get_all_negocios()
+    anotaciones = contact_identity.anotar_bandejas(activos)
+
     # Format into frontend-friendly response with normalized and display fields
     formatted = []
     for n in negocios:
+        anot = anotaciones.get(n["id"]) or contact_identity.anotar_bandejas([n])[n["id"]]
         checks = {}
         try:
             checks = json.loads(n.get("checks_json") or "{}")
@@ -773,7 +779,11 @@ def api_prospects_get():
             "ingreso_cobrado": n.get("ingreso_cobrado", 0.0),
             "en_cuarentena": n.get("en_cuarentena", 0),
             "motivo_cuarentena": n.get("motivo_cuarentena", ""),
-            "fecha_cuarentena": n.get("fecha_cuarentena")
+            "fecha_cuarentena": n.get("fecha_cuarentena"),
+            "bandeja_contacto": n.get("bandeja_contacto") or "pendiente",
+            "intentos_whatsapp": n.get("intentos_whatsapp") or 0,
+            "ultimo_intento_whatsapp": n.get("ultimo_intento_whatsapp") or "",
+            **anot
         })
 
     return jsonify(formatted)
@@ -783,7 +793,53 @@ def api_prospect_detail(negocio_id):
     detail = db.get_negocio_detail(negocio_id)
     if not detail:
         return jsonify({"error": "Prospecto no encontrado"}), 404
-    return jsonify(detail)
+    return jsonify(_with_contact_tray(detail))
+
+
+def _with_contact_tray(detail: dict) -> dict:
+    anotaciones = contact_identity.anotar_bandejas(db.get_all_negocios())
+    detail.update(anotaciones.get(detail["id"]) or contact_identity.anotar_bandejas([detail])[detail["id"]])
+    detail["intentos_contacto"] = db.get_contact_attempts(detail["id"])
+    return detail
+
+
+def _is_outreach_blocked(detail: dict) -> bool:
+    return (detail.get("servicio_sugerido") or "") in ("no_contactar", "investigar_mas") or detail.get("identidad_verificada") == 0
+
+
+@app.route("/api/prospects/whatsapp-open", methods=["POST"])
+def api_whatsapp_open():
+    """Registra el intento al pulsar «Abrir en WhatsApp» y mueve a Abiertos. No confirma el envío."""
+    body = request.json or {}
+    try:
+        negocio_id = int(body.get("id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "ID de prospecto requerido"}), 400
+    detail = db.get_negocio_detail(negocio_id)
+    if not detail:
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    if _is_outreach_blocked(detail):
+        return jsonify({"error": "Prospecto bloqueado: no se puede iniciar contacto."}), 400
+    claves = contact_identity.claves_contacto(detail)["claves"]
+    mensaje = str(body.get("mensaje") or "")[:5000]
+    db.register_whatsapp_open(negocio_id, claves[0] if claves else "", mensaje, origen="pc")
+    return jsonify({"success": True, "prospecto": _with_contact_tray(db.get_negocio_detail(negocio_id))})
+
+
+@app.route("/api/prospects/return-pending", methods=["POST"])
+def api_return_pending():
+    body = request.json or {}
+    try:
+        negocio_id = int(body.get("id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "ID de prospecto requerido"}), 400
+    if not db.get_negocio_detail(negocio_id):
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    try:
+        db.return_to_pending(negocio_id, origen="pc")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "prospecto": _with_contact_tray(db.get_negocio_detail(negocio_id))})
 
 @app.route("/api/search", methods=["POST"])
 def api_search():
@@ -854,6 +910,13 @@ def api_search():
 
     debug_info["excluidos_existentes_o_contactados"] = excluded_existing
 
+    # Números ya registrados (Pendientes, Abiertos o Contactados) para no repetir prospectos.
+    numeros_existentes = {}
+    for ex in existing_negocios:
+        for k in contact_identity.claves_contacto(ex)["claves"]:
+            numeros_existentes.setdefault(k, ex["id"])
+    excluidos_mismo_numero = 0
+
     # Guardar prospectos en SQLite clasificando canales WhatsApp-first (Nivel 0 y 1)
     saved_prospects = []
     wa_comp_count = 0
@@ -883,6 +946,11 @@ def api_search():
             b["whatsapp_estado"] = "SIN_WHATSAPP_COMPROBABLE"
             b["tipo_canal_principal"] = "redes_sociales" if b.get("redes_sociales") else "ninguno"
 
+        claves_b = contact_identity.claves_contacto(b)["claves"]
+        if any(k in numeros_existentes for k in claves_b):
+            excluidos_mismo_numero += 1
+            continue
+
         # Conteo para diagnóstico
         st = b.get("whatsapp_estado")
         if st == "WHATSAPP_COMPROBADO":
@@ -911,10 +979,13 @@ def api_search():
 
         saved = db.save_or_update_negocio(b)
         saved_prospects.append(saved)
+        for k in claves_b:
+            numeros_existentes.setdefault(k, saved["id"])
 
     debug_info["con_whatsapp_comprobado"] = wa_comp_count
     debug_info["con_whatsapp_pendiente"] = wa_pend_count
     debug_info["otros_canales"] = otros_count
+    debug_info["excluidos_mismo_numero"] = excluidos_mismo_numero
 
     return jsonify({
         "prospects": saved_prospects,

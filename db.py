@@ -173,6 +173,23 @@ def init_db(target_path: Path = None):
         _ensure_column(cursor, "negocios", "pregunta_comercial", "TEXT DEFAULT ''")
         _ensure_column(cursor, "negocios", "identidad_verificada", "INTEGER DEFAULT 1")
 
+        # Bandejas de contacto: «abierto» = se abrió WhatsApp, sin confirmar envío.
+        _ensure_column(cursor, "negocios", "bandeja_contacto", "TEXT DEFAULT 'pendiente'")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS intentos_contacto (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                negocio_id INTEGER NOT NULL,
+                accion TEXT NOT NULL, -- 'whatsapp_abierto', 'regresado_a_pendientes'
+                canal TEXT DEFAULT 'whatsapp',
+                telefono_e164 TEXT DEFAULT '',
+                mensaje TEXT DEFAULT '',
+                origen TEXT DEFAULT 'pc', -- 'pc', 'movil'
+                evento_uuid TEXT DEFAULT '',
+                creado_en TEXT NOT NULL,
+                FOREIGN KEY (negocio_id) REFERENCES negocios(id) ON DELETE CASCADE
+            );
+        """)
+
         # Sabueso Móvil (iPhone): vínculo de prospectos creados en el celular y bitácora idempotente
         _ensure_column(cursor, "negocios", "movil_uid", "TEXT DEFAULT ''")
         cursor.execute("""
@@ -668,6 +685,8 @@ def get_all_negocios(
     query = """
         SELECT n.*, c.telefono, c.whatsapp, c.whatsapp_estado, c.email, c.estado_verificacion,
                c.fuente_whatsapp, c.tipo_canal_principal, c.url_origen as contacto_url_origen, c.fecha_comprobacion as contacto_fecha_comprobacion,
+               (SELECT COUNT(*) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS intentos_whatsapp,
+               (SELECT MAX(i.creado_en) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS ultimo_intento_whatsapp,
                a.primer_contacto_fecha, a.fecha_contacto_confirmada, a.canal, a.respuesta,
                a.necesidad_expresada, a.siguiente_accion, a.fecha_seguimiento,
                a.propuesta_enviada, a.propuesta_monto, a.venta_acordada, a.venta_monto, a.ingreso_cobrado
@@ -711,6 +730,8 @@ def get_negocio_detail(negocio_id):
         cursor.execute("""
             SELECT n.*, c.telefono, c.whatsapp, c.whatsapp_estado, c.email, c.estado_verificacion,
                    c.fuente_whatsapp, c.tipo_canal_principal, c.url_origen as contacto_url_origen, c.fecha_comprobacion as contacto_fecha_comprobacion,
+                   (SELECT COUNT(*) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS intentos_whatsapp,
+                   (SELECT MAX(i.creado_en) FROM intentos_contacto i WHERE i.negocio_id = n.id AND i.accion = 'whatsapp_abierto') AS ultimo_intento_whatsapp,
                    a.primer_contacto_fecha, a.fecha_contacto_confirmada, a.canal,
                    a.respuesta, a.necesidad_expresada, a.siguiente_accion, a.fecha_seguimiento,
                    a.propuesta_enviada, a.propuesta_monto, a.venta_acordada, a.venta_monto,
@@ -1413,3 +1434,63 @@ def export_db_to_df(include_quarantine: bool = False):
         rows = cursor.fetchall()
         data = [dict(r) for r in rows]
         return pd.DataFrame(data)
+
+
+# =========================================================
+# BANDEJAS DE CONTACTO: Pendientes -> Abiertos -> Contactados
+# =========================================================
+
+def _ya_contactado(cursor, negocio_id) -> bool:
+    cursor.execute("""
+        SELECT n.estado_comercial, a.fecha_contacto_confirmada
+        FROM negocios n LEFT JOIN actividad_comercial a ON a.negocio_id = n.id
+        WHERE n.id = ?
+    """, (negocio_id,))
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError(f"Prospecto con ID {negocio_id} no encontrado.")
+    return bool(row["fecha_contacto_confirmada"]) or (row["estado_comercial"] or "") in (
+        "contactado", "interesado", "no_interesa", "propuesta", "ganado"
+    )
+
+
+def register_whatsapp_open(negocio_id, telefono_e164="", mensaje="", origen="pc", fecha=None, evento_uuid=""):
+    """
+    Registra que la persona pulsó «Abrir en WhatsApp» y mueve el prospecto a Abiertos.
+    NO confirma el envío: no cambia estado_comercial ni fecha_contacto_confirmada.
+    """
+    cuando = (fecha or "").strip() or datetime.now().isoformat(timespec="seconds")
+    with get_db() as conn:
+        cursor = conn.cursor()
+        contactado = _ya_contactado(cursor, negocio_id)
+        cursor.execute("""
+            INSERT INTO intentos_contacto (negocio_id, accion, canal, telefono_e164, mensaje, origen, evento_uuid, creado_en)
+            VALUES (?, 'whatsapp_abierto', 'whatsapp', ?, ?, ?, ?, ?)
+        """, (negocio_id, telefono_e164 or "", (mensaje or "")[:5000], origen, evento_uuid or "", cuando))
+        if not contactado:
+            cursor.execute("UPDATE negocios SET bandeja_contacto = 'abierto', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (negocio_id,))
+        conn.commit()
+
+
+def return_to_pending(negocio_id, origen="pc", fecha=None, evento_uuid=""):
+    """Regresa un prospecto de Abiertos a Pendientes conservando su historial de intentos."""
+    cuando = (fecha or "").strip() or datetime.now().isoformat(timespec="seconds")
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if _ya_contactado(cursor, negocio_id):
+            raise ValueError("Este prospecto ya tiene un contacto confirmado; no puede volver a Pendientes.")
+        cursor.execute("""
+            INSERT INTO intentos_contacto (negocio_id, accion, canal, origen, evento_uuid, creado_en)
+            VALUES (?, 'regresado_a_pendientes', 'whatsapp', ?, ?, ?)
+        """, (negocio_id, origen, evento_uuid or "", cuando))
+        cursor.execute("UPDATE negocios SET bandeja_contacto = 'pendiente', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (negocio_id,))
+        conn.commit()
+
+
+def get_contact_attempts(negocio_id) -> list:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT accion, canal, telefono_e164, origen, creado_en FROM intentos_contacto WHERE negocio_id = ? ORDER BY id",
+            (negocio_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]

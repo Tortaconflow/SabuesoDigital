@@ -31,7 +31,7 @@ MAX_EVENTS = 5000
 MAX_TEXT = 2000
 MAX_MESSAGE = 5000
 
-EVENT_TYPES = {"nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota"}
+EVENT_TYPES = {"nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota", "whatsapp_abierto", "regresar_pendientes"}
 CANALES = {"whatsapp", "llamada", "email", "redes", "persona"}
 ESTADOS_ACTUALIZABLES = {"investigado", "auditado", "interesado", "no_interesa", "propuesta", "ganado", "descartado"}
 FUENTES = {"maps", "facebook", "instagram", "persona", "recomendacion", "web", "otro"}
@@ -51,6 +51,7 @@ EXPORT_FIELDS = (
     "notas", "fecha_contacto_confirmada", "canal", "respuesta", "necesidad_expresada",
     "siguiente_accion", "fecha_seguimiento", "propuesta_enviada", "propuesta_monto",
     "venta_acordada", "venta_monto", "ingreso_cobrado", "movil_uid",
+    "bandeja_contacto", "intentos_whatsapp", "ultimo_intento_whatsapp",
 )
 
 
@@ -344,6 +345,21 @@ def _apply_nota(negocio_id: int, datos: dict, fecha: str):
         conn.commit()
 
 
+def _apply_whatsapp_abierto(negocio_id: int, datos: dict, fecha: str, evento_uuid: str):
+    """Intento de WhatsApp hecho en el celular: mueve a Abiertos sin confirmar el envío."""
+    tel = _text(datos.get("telefono_e164"), 20, "telefono_e164")
+    if tel and not re.match(r"^\+\d{8,15}$", tel):
+        raise EventoInvalido("El número del intento no está normalizado (+código de país).")
+    mensaje = _text(datos.get("mensaje"), MAX_MESSAGE, "mensaje")
+    with db.get_db() as conn:
+        n = conn.execute(
+            "SELECT servicio_sugerido, identidad_verificada FROM negocios WHERE id = ?", (negocio_id,)
+        ).fetchone()
+    if n and ((n["servicio_sugerido"] or "") in ("no_contactar", "investigar_mas") or n["identidad_verificada"] == 0):
+        raise EventoInvalido("Prospecto bloqueado: no se registra apertura de WhatsApp.")
+    db.register_whatsapp_open(negocio_id, tel, mensaje, origen="movil", fecha=fecha, evento_uuid=evento_uuid)
+
+
 def _record_result(evento_uuid, tipo, uid, negocio_id, resultado, motivo, evento, fecha):
     with db.get_db() as conn:
         conn.execute("""
@@ -422,6 +438,10 @@ def apply_mobile_events(payload: dict) -> dict:
                     _apply_actualizacion(negocio_id, datos)
                 elif tipo == "nota":
                     _apply_nota(negocio_id, datos, fecha)
+                elif tipo == "whatsapp_abierto":
+                    _apply_whatsapp_abierto(negocio_id, datos, fecha, evento_uuid)
+                elif tipo == "regresar_pendientes":
+                    db.return_to_pending(negocio_id, origen="movil", fecha=fecha, evento_uuid=evento_uuid)
 
             _record_result(evento_uuid, tipo, uid, negocio_id, "aplicado", "", evento, fecha)
             ya_aplicados.add(evento_uuid)

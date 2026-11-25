@@ -52,6 +52,16 @@ iPhone ── «Enviar avances» (menú Compartir) ──► sabueso_avances_…
 - También acepta el **CSV** de «Exportar CSV» de la PC, aunque trae menos datos (no incluye la fecha
   de seguimiento ni el bloqueo de identidad).
 
+## Pendientes, Abiertos y Contactados
+
+- **Pendientes:** prospectos que todavía no abres. Cada número aparece una sola vez.
+- **Abiertos:** tocaste «Abrir en WhatsApp». Eso queda registrado, pero **no** cuenta como mensaje enviado.
+  Desde ahí puedes abrir WhatsApp otra vez, confirmar que lo enviaste o regresarlo a Pendientes.
+- **Contactados:** solo cuando tú confirmas que enviaste el mensaje.
+- Un número que ya está en Abiertos o Contactados no vuelve a aparecer en Pendientes, aunque llegue
+  con otro formato (por ejemplo `954 123 4567` y `+52 (954) 123-4567`). Si el número no tiene lada de
+  país y no se sabe el país del negocio, no se compara con otros.
+
 ## Reglas CÍDIKS que respeta
 
 - Abrir WhatsApp o copiar un mensaje **no** marca a nadie como contactado: hay que confirmarlo.

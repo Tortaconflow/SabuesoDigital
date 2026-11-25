@@ -10,7 +10,7 @@
 (function () {
     "use strict";
 
-    const APP_VERSION = "1.0.0";
+    const APP_VERSION = "1.1.0";
     const FORMATO_PC = "sabueso-movil";
     const FORMATO_AVANCES = "sabueso-movil-avances";
     const FORMATO_RESPALDO = "sabueso-movil-respaldo";
@@ -39,9 +39,9 @@
         "prioridad", "estado_comercial", "problemas_detectados", "observacion_verificada", "hipotesis_comercial",
         "pregunta_comercial", "servicio_sugerido", "mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento",
         "notas", "fecha_contacto_confirmada", "canal", "respuesta", "necesidad_expresada", "siguiente_accion",
-        "fecha_seguimiento", "movil_uid"
+        "fecha_seguimiento", "movil_uid", "bandeja_contacto", "ultimo_intento_whatsapp", "pais"
     ];
-    const CAMPOS_NUM = ["puntuacion", "propuesta_monto", "venta_monto", "ingreso_cobrado"];
+    const CAMPOS_NUM = ["puntuacion", "propuesta_monto", "venta_monto", "ingreso_cobrado", "intentos_whatsapp"];
     const CAMPOS_FLAG = ["propuesta_enviada", "venta_acordada", "mensaje_aprobado", "identidad_verificada"];
     const CAMPOS_CRM = [
         "estado_comercial", "respuesta", "necesidad_expresada", "siguiente_accion", "fecha_seguimiento",
@@ -201,6 +201,116 @@
     }
 
     // ======================================================================
+    // Identidad de contacto y bandejas (alineado con contact_identity.py de la PC)
+    // Un contacto = su número en E.164 (+52XXXXXXXXXX). Números ambiguos o inválidos
+    // nunca se usan para unir prospectos.
+    // ======================================================================
+    const ESTADOS_CONTACTADOS = new Set(["contactado", "interesado", "no_interesa", "propuesta", "ganado"]);
+    const MARCAS_MEXICO = [
+        "mexico", "cdmx", "aguascalientes", "baja california", "campeche", "chiapas", "chihuahua",
+        "coahuila", "colima", "durango", "guanajuato", "guerrero", "hidalgo", "jalisco", "michoacan",
+        "morelos", "nayarit", "nuevo leon", "oaxaca", "puebla", "queretaro", "quintana roo",
+        "san luis potosi", "sinaloa", "sonora", "tabasco", "tamaulipas", "tlaxcala", "veracruz",
+        "yucatan", "zacatecas", "puerto escondido", "zicatela", "bacocho", "carrizalillo", "mazunte",
+        "zipolite", "huatulco", "chahue", "santa cruz huatulco", "puerto angel", "san agustinillo",
+        "pochutla", "chacahua", "juquila", "pinotepa", "salina cruz", "juchitan", "tehuantepec", "mitla", "tlacolula"
+    ];
+    const RE_MEXICO = new RegExp(`\\b(${MARCAS_MEXICO.join("|")})\\b`);
+
+    function paisDelProspecto(p) {
+        const explicito = sinAcentos(p.pais || "");
+        if (explicito) return ["mx", "mex", "mexico"].includes(explicito) ? "MX" : explicito.toUpperCase().slice(0, 2);
+        const ubicacion = sinAcentos(`${p.municipio || ""} ${p.direccion || ""}`);
+        if (ubicacion.includes("nuevo mexico") || ubicacion.includes("new mexico")) return "";
+        return RE_MEXICO.test(ubicacion) ? "MX" : "";
+    }
+
+    function validarMx(nacional) {
+        if (nacional.length !== 10 || "01".includes(nacional[0]) || new Set(nacional).size <= 2) {
+            return { estado: "invalido", e164: "", motivo: "número mexicano inválido" };
+        }
+        return { estado: "valido", e164: `+52${nacional}`, motivo: "" };
+    }
+
+    function normalizarTelefono(raw, pais = "", esWhatsapp = false) {
+        let s = String(raw ?? "").trim();
+        if (!s) return { estado: "invalido", e164: "", motivo: "sin número" };
+        s = s.replace(/\s*(?:ext\.?|extension|extensión|x)\s*\d+\s*$/i, "").replace(/[\s\-(). ]/g, "");
+        let internacional = false;
+        if (s.startsWith("+")) { internacional = true; s = s.slice(1); }
+        else if (s.startsWith("00") && s.length >= 11) { internacional = true; s = s.slice(2); }
+        if (!/^\d+$/.test(s)) return { estado: "invalido", e164: "", motivo: "contiene caracteres que no son dígitos" };
+        if (!internacional && ((s.length === 12 && s.startsWith("52")) || (s.length === 13 && s.startsWith("521")))) internacional = true;
+        else if (!internacional && esWhatsapp && s.length >= 11 && s.length <= 15) internacional = true;
+        if (internacional) {
+            if (s.startsWith("52")) {
+                let nacional = s.slice(2);
+                if (nacional.length === 11 && nacional.startsWith("1")) nacional = nacional.slice(1);
+                return validarMx(nacional);
+            }
+            if (s.length >= 8 && s.length <= 15 && new Set(s).size > 2 && !s.startsWith("0")) return { estado: "valido", e164: `+${s}`, motivo: "" };
+            return { estado: "invalido", e164: "", motivo: "número internacional con longitud inválida" };
+        }
+        if (s.length === 10) {
+            if ((pais || "").toUpperCase() === "MX") return validarMx(s);
+            return { estado: "ambiguo", e164: "", motivo: pais ? `sin código de país para ${pais}` : "sin código de país y país del prospecto desconocido" };
+        }
+        if (s.length >= 7 && s.length <= 9) return { estado: "ambiguo", e164: "", motivo: "número local sin lada" };
+        return { estado: "invalido", e164: "", motivo: "longitud inválida" };
+    }
+
+    function clavesContacto(p) {
+        const pais = paisDelProspecto(p);
+        const claves = [], estados = [];
+        for (const [campo, esWa] of [["whatsapp", true], ["telefono", false]]) {
+            const valor = String(p[campo] || "").trim();
+            if (!valor) continue;
+            for (const parte of valor.split(/[,;/|\n]|\s+(?:y|o|or|and)\s+/i)) {
+                if (!parte || !parte.trim()) continue;
+                const r = normalizarTelefono(parte, pais, esWa);
+                estados.push(r.estado);
+                if (r.estado === "valido" && !claves.includes(r.e164)) claves.push(r.e164);
+            }
+        }
+        const estadoTel = claves.length ? "valido" : estados.includes("ambiguo") ? "ambiguo" : estados.length ? "invalido" : "sin_telefono";
+        return { claves, estado: estadoTel, pais };
+    }
+
+    function bandejaDe(p) {
+        if (p.fecha_contacto_confirmada || ESTADOS_CONTACTADOS.has(p.estado_comercial)) return "contactado";
+        if (p.bandeja_contacto === "abierto") return "abierto";
+        return "pendiente";
+    }
+
+    // Marca qué prospectos se ocultan de Pendientes porque su número ya está en Abiertos/Contactados
+    // o ya aparece en otro pendiente. No fusiona ni borra nada.
+    function anotarBandejas(vistas) {
+        const reclamados = {};
+        const lista = Object.values(vistas);
+        for (const v of lista) {
+            const c = clavesContacto(v);
+            v.bandeja = bandejaDe(v);
+            v.claves_contacto = c.claves;
+            v.telefono_estado = c.estado;
+            v.oculto_en_pendientes = false;
+            v.duplicado_de = null;
+        }
+        const ordenId = (v) => (v.pc_id ? Number(v.pc_id) : 1e12);
+        [...lista].sort((a, b) => ordenId(a) - ordenId(b)).forEach((v) => {
+            if (v.bandeja !== "pendiente") v.claves_contacto.forEach((k) => { if (!(k in reclamados)) reclamados[k] = v.uid; });
+        });
+        const vistos = {};
+        lista.filter((v) => v.bandeja === "pendiente")
+            .sort((a, b) => ((Number(b.intentos_whatsapp) > 0) - (Number(a.intentos_whatsapp) > 0)) || (ordenId(a) - ordenId(b)))
+            .forEach((v) => {
+                const dueno = v.claves_contacto.map((k) => reclamados[k]).find(Boolean) || v.claves_contacto.map((k) => vistos[k]).find(Boolean);
+                if (dueno && dueno !== v.uid) { v.oculto_en_pendientes = true; v.duplicado_de = dueno; return; }
+                v.claves_contacto.forEach((k) => { if (!(k in vistos)) vistos[k] = v.uid; });
+            });
+        return vistas;
+    }
+
+    // ======================================================================
     // Almacenamiento local (IndexedDB, con respaldo en localStorage)
     // ======================================================================
     const DB_NOMBRE = "sabueso-movil";
@@ -254,15 +364,39 @@
             prospectos: {},
             alias: {},
             eventos: [],
+            borradores: {},
             meta: { ultima_importacion: "", origen_importacion: "", ultima_exportacion: "", ultimo_respaldo: "", municipio_reciente: "" }
         };
     }
 
     let estado = estadoVacio();
 
+    // Diario síncrono: al tocar «Abrir en WhatsApp» iOS puede congelar la app antes de que termine
+    // IndexedDB; el intento y el borrador se anotan primero aquí y se recuperan al volver a abrir.
+    const CLAVE_DIARIO = `${DB_NOMBRE}:diario`;
+    function anotarEnDiario(ev, borrador) {
+        try {
+            const d = JSON.parse(localStorage.getItem(CLAVE_DIARIO) || '{"eventos":[],"borradores":{}}');
+            if (ev) d.eventos.push(ev);
+            if (borrador) Object.assign(d.borradores, borrador);
+            localStorage.setItem(CLAVE_DIARIO, JSON.stringify(d));
+        } catch { /* sin localStorage: se confía en IndexedDB */ }
+    }
+    function recuperarDiario() {
+        try {
+            const d = JSON.parse(localStorage.getItem(CLAVE_DIARIO) || "null");
+            if (!d) return false;
+            const ids = new Set(estado.eventos.map((e) => e.id));
+            (d.eventos || []).forEach((e) => { if (e && e.id && !ids.has(e.id)) estado.eventos.push(e); });
+            Object.assign(estado.borradores, d.borradores || {});
+            return true;
+        } catch { return false; }
+    }
+
     async function guardar() {
         try {
             await escribirEstado(estado);
+            try { localStorage.removeItem(CLAVE_DIARIO); } catch { /* nada */ }
         } catch (err) {
             toast("No se pudo guardar en el celular. Haz un respaldo cuanto antes.", "error");
             throw err;
@@ -292,6 +426,13 @@
             Object.assign(v, d);
         } else if (ev.tipo === "nota") {
             v.notas_movil.push({ fecha: ev.fecha, texto: d.texto });
+        } else if (ev.tipo === "whatsapp_abierto") {
+            // Registro del intento: NO confirma el envío ni cambia el estado comercial.
+            if (bandejaDe(v) !== "contactado") v.bandeja_contacto = "abierto";
+            v.intentos_whatsapp = (Number(v.intentos_whatsapp) || 0) + 1;
+            v.ultimo_intento_whatsapp = ev.fecha;
+        } else if (ev.tipo === "regresar_pendientes") {
+            v.bandeja_contacto = "pendiente";
         }
     }
 
@@ -310,7 +451,7 @@
             v.pendientes = v.historial.filter((e) => !e.sincronizado).length;
             vistas[uid] = v;
         }
-        return vistas;
+        return anotarBandejas(vistas);
     }
 
     function ordenar(lista) {
@@ -321,8 +462,11 @@
         );
     }
 
-    const fueContactado = (p) => !!p.fecha_contacto_confirmada || !["investigado", "auditado"].includes(p.estado_comercial);
-    const porContactar = (p) => !fueContactado(p) && !estaBloqueado(p) && !!(p.whatsapp || p.telefono);
+    const fueContactado = (p) => p.bandeja === "contactado";
+    const esAbierto = (p) => p.bandeja === "abierto";
+    // Pendientes: sin abrir ni contactar, no bloqueados, con teléfono y sin número repetido.
+    const esPendiente = (p) => p.bandeja === "pendiente" && ["investigado", "auditado"].includes(p.estado_comercial) &&
+        !p.oculto_en_pendientes && !estaBloqueado(p) && !!(p.whatsapp || p.telefono);
     const seguimientoVencido = (p) => !!p.fecha_seguimiento && p.fecha_seguimiento <= hoyISO() && !CERRADOS.has(p.estado_comercial);
     const eventosPendientes = () => estado.eventos.filter((e) => !e.sincronizado);
 
@@ -433,6 +577,7 @@
         p.estado_comercial = normalizarEstado(p.estado_comercial);
         if (p.fecha_seguimiento && !/^\d{4}-\d{2}-\d{2}/.test(p.fecha_seguimiento)) p.fecha_seguimiento = "";
         p.fecha_seguimiento = p.fecha_seguimiento.slice(0, 10);
+        p.bandeja_contacto = p.bandeja_contacto === "abierto" ? "abierto" : "pendiente";
         p.nombre = p.nombre || "Sin nombre";
         p.origen = "pc";
         return p;
@@ -639,8 +784,7 @@
     let limiteLista = 60;
     let fichaUid = null;
     let tabMensaje = "mensaje_personalizado";
-    let esperandoConfirmacion = null;
-    const borradores = {};
+    let timerBorrador = null;
 
     function cambiarTab(tab) {
         tabActual = tab;
@@ -682,6 +826,8 @@
         if (waComprobado(p)) badges.push(h("span", { class: "badge badge-wa" }, "WhatsApp ✓"));
         else if (waPendiente(p)) badges.push(h("span", { class: "badge badge-pend" }, "WhatsApp por verificar"));
         if (estaBloqueado(p)) badges.push(h("span", { class: "badge badge-bloq" }, "No contactar aún"));
+        if (p.bandeja === "abierto") badges.push(h("span", { class: "badge badge-pend" }, "Abierto · sin confirmar envío"));
+        if (p.oculto_en_pendientes) badges.push(h("span", { class: "badge" }, "Número repetido"));
         if (p.fecha_seguimiento && !CERRADOS.has(p.estado_comercial)) {
             badges.push(h("span", { class: `badge ${seguimientoVencido(p) ? "badge-high" : ""}` }, `Seguimiento ${fechaBonita(p.fecha_seguimiento, false)}`));
         }
@@ -741,6 +887,13 @@
             ));
         }
 
+        const abiertosWa = ordenar(lista.filter(esAbierto));
+        if (abiertosWa.length) {
+            out.push(h("h3", null, `Abiertos: ¿ya enviaste? (${abiertosWa.length})`));
+            abiertosWa.slice(0, 15).forEach((p) => out.push(tarjetaProspecto(p,
+                `Abriste WhatsApp ${fechaBonita(p.ultimo_intento_whatsapp)}. Confírmalo solo si lo enviaste.`)));
+        }
+
         const seguimientos = ordenar(lista.filter(seguimientoVencido));
         out.push(h("h3", null, `Seguimientos para hoy (${seguimientos.length})`));
         if (seguimientos.length) seguimientos.slice(0, 15).forEach((p) => out.push(tarjetaProspecto(p, p.siguiente_accion ? `Siguiente paso: ${p.siguiente_accion}` : "")));
@@ -752,12 +905,14 @@
             abiertos.slice(0, 10).forEach((p) => out.push(tarjetaProspecto(p)));
         }
 
-        const nuevos = ordenar(lista.filter(porContactar));
-        out.push(h("h3", null, `Por contactar (${nuevos.length})`));
+        const nuevos = ordenar(lista.filter(esPendiente));
+        out.push(h("h3", null, `Pendientes (${nuevos.length})`));
         if (nuevos.length) {
             nuevos.slice(0, 10).forEach((p) => out.push(tarjetaProspecto(p)));
-            if (nuevos.length > 10) out.push(h("button", { class: "btn btn-texto", type: "button", onclick: () => { filtroLista = "por_contactar"; cambiarTab("prospectos"); } }, `Ver los ${nuevos.length} →`));
-        } else out.push(h("p", { class: "parrafo" }, "No hay prospectos listos para contactar."));
+            if (nuevos.length > 10) out.push(h("button", { class: "btn btn-texto", type: "button", onclick: () => { filtroLista = "pendientes"; cambiarTab("prospectos"); } }, `Ver los ${nuevos.length} →`));
+        } else out.push(h("p", { class: "parrafo" }, "No hay prospectos pendientes de contactar."));
+        const ocultos = lista.filter((p) => p.oculto_en_pendientes).length;
+        if (ocultos) out.push(h("p", { class: "muy-chico" }, `${ocultos} prospecto(s) no aparecen en Pendientes porque su número ya está en otro prospecto (Abiertos, Contactados o repetido). Siguen en «Todos».`));
 
         out.push(h("h3", null, "Tus números"));
         const contactados = lista.filter(fueContactado).length;
@@ -785,9 +940,10 @@
     // ======================================================================
     const FILTROS = {
         todos: ["Todos", () => true],
-        por_contactar: ["Por contactar", porContactar],
+        pendientes: ["Pendientes", esPendiente],
+        abiertos: ["Abiertos", esAbierto],
+        contactado: ["Contactados", fueContactado],
         seguimiento: ["Seguimiento", seguimientoVencido],
-        contactado: ["Contactados", (p) => p.estado_comercial === "contactado"],
         interesado: ["Interesados", (p) => p.estado_comercial === "interesado"],
         propuesta: ["Propuesta", (p) => p.estado_comercial === "propuesta"],
         ganado: ["Ganados", (p) => p.estado_comercial === "ganado"],
@@ -858,7 +1014,6 @@
 
     function cerrarFicha() {
         fichaUid = null;
-        esperandoConfirmacion = null;
         $("#ficha").classList.add("oculto");
         $("#ficha").replaceChildren();
         document.body.classList.remove("sin-scroll");
@@ -881,7 +1036,7 @@
 
         const area = h("textarea", {
             class: "mensaje", id: "msg-editor", "aria-label": "Mensaje para enviar",
-            value: borradores[claveBorrador] ?? mensajeActual
+            value: estado.borradores[claveBorrador] ?? mensajeActual
         });
         const waDig = digitosWa(p.whatsapp || p.telefono);
         const tel = digitosTel(p.telefono || p.whatsapp);
@@ -895,12 +1050,20 @@
         const btnWa = h("a", {
             class: `btn btn-wa ${puedeWa ? "" : "deshabilitado"}`,
             href: puedeWa ? enlaceWa() : "#", target: "_blank", rel: "noopener noreferrer"
-        }, "WhatsApp");
+        }, p.bandeja === "abierto" ? "Abrir en WhatsApp otra vez" : "Abrir en WhatsApp");
         const btnWaApp = h("a", { class: `btn btn-texto ${puedeWa ? "" : "oculto"}`, href: puedeWa ? enlaceWaApp() : "#" }, "¿No abrió? Abrir directo en la app");
+        // Al pulsar se registra el intento y pasa a Abiertos. Esto NO confirma que el mensaje se envió
+        // (ni siquiera que WhatsApp se haya abierto): eso solo lo confirma la persona.
         const marcarEnvio = (e) => {
             if (!puedeWa) { e.preventDefault(); return; }
-            esperandoConfirmacion = uid;
-            setTimeout(() => { if (fichaUid === uid) render(); }, 1500);
+            const ev = nuevoEvento("whatsapp_abierto", uid, {
+                telefono_e164: p.claves_contacto[0] || "", mensaje: texto(area.value, 5000), plantilla: tabMensaje
+            });
+            const borrador = area.value !== mensajeActual ? { [claveBorrador]: area.value } : null;
+            if (borrador) Object.assign(estado.borradores, borrador);
+            anotarEnDiario(ev, borrador);
+            guardar().catch(() => { });
+            setTimeout(() => { if (fichaUid === uid) render(); }, 1200);
         };
         btnWa.addEventListener("click", marcarEnvio);
         btnWaApp.addEventListener("click", marcarEnvio);
@@ -918,13 +1081,16 @@
 
         const btnGuardarMsg = h("button", { class: `btn btn-chico ${area.value === mensajeActual ? "oculto" : ""}`, type: "button" }, "Guardar cambios del mensaje");
         area.addEventListener("input", () => {
-            borradores[claveBorrador] = area.value;
+            if (area.value === mensajeActual) delete estado.borradores[claveBorrador];
+            else estado.borradores[claveBorrador] = area.value;
             btnGuardarMsg.classList.toggle("oculto", area.value === mensajeActual);
             if (puedeWa) { btnWa.href = enlaceWa(); btnWaApp.href = enlaceWaApp(); }
+            clearTimeout(timerBorrador);
+            timerBorrador = setTimeout(() => guardar().catch(() => { }), 700);
         });
         btnGuardarMsg.addEventListener("click", async () => {
             nuevoEvento("actualizacion", uid, { [tabMensaje]: texto(area.value, 5000) });
-            delete borradores[claveBorrador];
+            delete estado.borradores[claveBorrador];
             await guardar();
             toast("Mensaje guardado.", "ok");
             render();
@@ -935,14 +1101,21 @@
                 `${fechaBonita(p.fecha_contacto_confirmada)} · ${CANALES[p.canal] || p.canal || "canal sin registrar"}`)
             : null;
 
-        const preguntaEnvio = esperandoConfirmacion === uid && !p.fecha_contacto_confirmada
+        const avisoAbierto = p.bandeja === "abierto"
             ? h("div", { class: "aviso aviso-info" },
-                h("strong", null, "¿Sí enviaste el mensaje?"),
-                "Abrir WhatsApp no cuenta como contacto. Confírmalo solo si de verdad lo mandaste.",
+                h("strong", null, "En Abiertos: ¿ya enviaste el mensaje?"),
+                `Abriste WhatsApp ${Number(p.intentos_whatsapp) || 1} vez/veces (último: ${fechaBonita(p.ultimo_intento_whatsapp)}). Eso no confirma el envío.`,
                 h("div", { class: "fila-btns" },
                     h("button", { class: "btn btn-ok", type: "button", onclick: () => hojaConfirmarContacto(p) }, "Sí, confirmar"),
-                    h("button", { class: "btn", type: "button", onclick: () => { esperandoConfirmacion = null; render(); } }, "Todavía no")
+                    h("button", { class: "btn", type: "button", onclick: () => regresarAPendientes(uid) }, "Regresar a Pendientes")
                 ))
+            : null;
+        const duenoNumero = p.duplicado_de ? vistas[p.duplicado_de] : null;
+        const avisoRepetido = p.oculto_en_pendientes && duenoNumero
+            ? h("div", { class: "aviso aviso-alerta" },
+                h("strong", null, "Número repetido"),
+                `Este número ya está en «${duenoNumero.nombre}» (${{ abierto: "Abiertos", contactado: "Contactados", pendiente: "Pendientes" }[duenoNumero.bandeja]}). Por eso no aparece en Pendientes.`,
+                h("button", { class: "btn btn-bloque", type: "button", onclick: () => abrirFicha(duenoNumero.uid) }, "Ver ese prospecto"))
             : null;
 
         const redes = primerasUrls(p.redes_sociales);
@@ -959,7 +1132,8 @@
             ),
             bloqueado ? h("div", { class: "aviso aviso-peligro" }, h("strong", null, "No contactar todavía"),
                 "Sabueso marcó este prospecto como bloqueado (identidad sin verificar o requiere investigar más). No se puede enviar mensaje desde aquí.") : null,
-            preguntaEnvio,
+            avisoAbierto,
+            avisoRepetido,
             contactoInfo,
 
             h("h3", null, "Mensaje"),
@@ -1026,13 +1200,22 @@
         if (ev.tipo === "contacto_confirmado") desc = `Contacto confirmado por ${CANALES[d.canal] || d.canal}`;
         else if (ev.tipo === "nota") desc = `Nota: ${texto(d.texto, 60)}`;
         else if (ev.tipo === "nuevo_prospecto") desc = "Alta del prospecto en el celular";
+        else if (ev.tipo === "whatsapp_abierto") desc = "Abriste WhatsApp (sin confirmar envío)";
+        else if (ev.tipo === "regresar_pendientes") desc = "Regresado a Pendientes";
         else desc = `Actualización: ${Object.keys(d).map((k) => k.replace(/_/g, " ")).join(", ")}`;
         const estadoEv = ev.sincronizado ? "✓ en la PC" : (ev.exportado_en ? "Enviado, falta confirmar" : "Solo en el celular");
-        const puedeDeshacer = !ev.sincronizado && !ev.exportado_en && ev.tipo !== "nuevo_prospecto";
+        const puedeDeshacer = !ev.sincronizado && !ev.exportado_en && !["nuevo_prospecto", "whatsapp_abierto"].includes(ev.tipo);
         return h("div", { class: "historial-item" },
             h("div", null, h("div", null, desc), h("div", { class: "muy-chico" }, `${fechaBonita(ev.fecha)} · ${estadoEv}`)),
             puedeDeshacer ? h("button", { class: "btn btn-texto", type: "button", onclick: () => deshacerEvento(ev.id) }, "Deshacer") : null
         );
+    }
+
+    async function regresarAPendientes(uid) {
+        nuevoEvento("regresar_pendientes", uid, {});
+        await guardar();
+        toast("De vuelta en Pendientes. El historial de intentos se conserva.", "ok");
+        render();
     }
 
     async function deshacerEvento(id) {
@@ -1153,7 +1336,6 @@
                         if (bloqueado && !nota) { toast("Este prospecto está bloqueado: la nota es obligatoria.", "error"); return; }
                         const cuando = fecha.value ? `${fecha.value}:00` : ahoraISO();
                         nuevoEvento("contacto_confirmado", p.uid, { canal: canal.value, notas: nota, fecha: cuando });
-                        esperandoConfirmacion = null;
                         await guardar();
                         cerrarHoja();
                         toast("Contacto confirmado en el celular.", "ok");
@@ -1196,9 +1378,14 @@
             web: h("input", { id: "ag-web", type: "url", inputmode: "url", placeholder: "Si tiene" }),
             redes: h("input", { id: "ag-redes", type: "url", inputmode: "url", placeholder: "Link de Facebook o Instagram" }),
             fuente: h("select", { id: "ag-fuente" }, Object.entries(FUENTES).map(([k, v]) => h("option", { value: k }, v))),
+            pais: h("select", { id: "ag-pais" },
+                h("option", { value: "MX" }, "México (+52)"),
+                h("option", { value: "" }, "Otro país (escribe el número con +lada)")),
             notas: h("textarea", { id: "ag-notas", placeholder: "Dónde lo viste, horario, quién atiende…" }),
             identidad: h("input", { id: "ag-identidad", type: "checkbox" })
         };
+
+        const avisoDuplicado = h("div", { class: "aviso aviso-alerta oculto", role: "alert" });
 
         const guardarNuevo = async () => {
             const nombre = texto(f.nombre.value, 200);
@@ -1209,12 +1396,35 @@
             if (tel && !digitosTel(tel)) { toast("El teléfono debe tener 10 dígitos."); return; }
             const web = urlSegura(f.web.value);
             const redes = urlSegura(f.redes.value);
+            const pais = f.pais.value;
+            // Se guarda el número normalizado (+52…) cuando es válido, para que la PC lo reconozca igual.
+            const norm = (n, esWa) => { const r = normalizarTelefono(n, pais, esWa); return r.estado === "valido" ? r.e164 : n; };
             const base = {
-                nombre, sector: texto(f.sector.value, 120), municipio: texto(f.municipio.value, 120),
-                whatsapp: wa, whatsapp_estado: wa && f.wa_ok.checked ? "confirmado" : "no_verificado",
-                telefono: tel || wa, email: texto(f.email.value, 200), web, redes_sociales: redes,
+                nombre, sector: texto(f.sector.value, 120), municipio: texto(f.municipio.value, 120), pais,
+                whatsapp: wa ? norm(wa, false) : "", whatsapp_estado: wa && f.wa_ok.checked ? "confirmado" : "no_verificado",
+                telefono: (tel || wa) ? norm(tel || wa, false) : "", email: texto(f.email.value, 200), web, redes_sociales: redes,
                 fuente: f.fuente.value, identidad_verificada: f.identidad.checked ? 1 : 0
             };
+
+            // No agregar un número que ya existe (en Pendientes, Abiertos o Contactados).
+            const nuevas = clavesContacto(base);
+            const vistas = construirVistas();
+            const existente = Object.values(vistas).find((v) => v.claves_contacto.some((k) => nuevas.claves.includes(k)));
+            if (existente) {
+                const nombreBandeja = { abierto: "Abiertos", contactado: "Contactados", pendiente: "Pendientes" }[existente.bandeja];
+                avisoDuplicado.replaceChildren(
+                    h("strong", null, "Ese número ya está registrado"),
+                    `Pertenece a «${existente.nombre}» (${nombreBandeja}). No se agregó otra vez.`,
+                    h("button", { class: "btn btn-bloque", type: "button", onclick: () => abrirFicha(existente.uid) }, "Ver ese prospecto")
+                );
+                avisoDuplicado.classList.remove("oculto");
+                avisoDuplicado.scrollIntoView({ block: "center" });
+                return;
+            }
+            avisoDuplicado.classList.add("oculto");
+            if ((wa || tel) && nuevas.estado !== "valido") {
+                toast("No pude reconocer el número completo (falta lada o país): no se podrá detectar si se repite.");
+            }
             const msgs = generarMensajes(base);
             const uid = `m-${uuid()}`;
             const datos = { ...base, ...msgs, notas: texto(f.notas.value, 2000) };
@@ -1261,11 +1471,14 @@
                     h("div", { class: "campo" }, h("label", { for: "ag-email" }, "Correo"), f.email),
                     h("div", { class: "campo" }, h("label", { for: "ag-fuente" }, "¿Dónde lo encontraste?"), f.fuente)
                 ),
+                h("div", { class: "campo" }, h("label", { for: "ag-pais" }, "País del número"), f.pais
+                ),
                 h("div", { class: "campo" }, h("label", { for: "ag-web" }, "Sitio web"), f.web),
                 h("div", { class: "campo" }, h("label", { for: "ag-redes" }, "Facebook / Instagram"), f.redes),
                 h("div", { class: "campo" }, h("label", { for: "ag-notas" }, "Notas"), f.notas),
                 h("label", { class: "check" }, f.identidad, "Verifiqué que el negocio existe, está activo y que estos datos de contacto son públicos."),
                 h("p", { class: "muy-chico" }, "Sin esta casilla el prospecto queda como «No contactar todavía», igual que en la PC."),
+                avisoDuplicado,
                 h("button", { class: "btn btn-primario btn-bloque", type: "button", onclick: guardarNuevo }, "Agregar y preparar mensaje")
             )
         ];
@@ -1392,17 +1605,19 @@
         window.addEventListener("online", actualizarRed);
         window.addEventListener("offline", actualizarRed);
         document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible" && esperandoConfirmacion && fichaUid === esperandoConfirmacion) render();
+            if (document.visibilityState === "visible" && fichaUid) render();
         });
         actualizarRed();
 
         const guardado = await leerEstado();
         if (guardado && guardado.version === 1) {
             const base = estadoVacio();
-            estado = { ...base, ...guardado, meta: { ...base.meta, ...(guardado.meta || {}) }, alias: guardado.alias || {} };
-        } else {
-            await guardar();
+            estado = {
+                ...base, ...guardado, meta: { ...base.meta, ...(guardado.meta || {}) },
+                alias: guardado.alias || {}, borradores: guardado.borradores || {}
+            };
         }
+        if (recuperarDiario() || !guardado) await guardar();
         if (navigator.storage && navigator.storage.persist) {
             navigator.storage.persist().catch(() => { });
         }
@@ -1411,7 +1626,10 @@
     }
 
     // Exponer funciones puras para pruebas automatizadas (sin efectos en la app).
-    window.__sabuesoMovil = { parseCSV, prospectosDesdeCSV, generarMensajes, estaBloqueado, digitosWa, urlSegura, normalizarEstado };
+    window.__sabuesoMovil = {
+        parseCSV, prospectosDesdeCSV, generarMensajes, estaBloqueado, digitosWa, urlSegura, normalizarEstado,
+        normalizarTelefono, clavesContacto, paisDelProspecto
+    };
 
     iniciar().catch((err) => {
         $("#vista").replaceChildren(h("div", { class: "aviso aviso-peligro" }, h("strong", null, "No se pudo abrir Sabueso Móvil"), String(err && err.message || err)));
