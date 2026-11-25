@@ -14,7 +14,8 @@ graph TD
     
     SEC -->|Anti-SSRF & DNS Validation| EXT_WEB["Sitios Web de Prospectos"]
     EVID -->|Headless Chromium| PW["Playwright Browser"]
-    COP -->|Opcional / Fallback a Reglas| GEMINI["Google Gemini API"]
+    COP --> REG["Reglas compartidas (docs/reglas/sabueso_reglas.json)"]
+    COP --> VAL["Validación de identidad y revisión de borradores (validacion.py)"]
     DB --> SQLITE[("sabueso_cidiks.db")]
 ```
 
@@ -54,4 +55,10 @@ Reemplaza el almacenamiento rudimentario en archivos JSON planos por un esquema 
 - Determina automáticamente la modalidad de contacto:
   - **Modalidad A (Problema Verificado):** Utiliza únicamente observaciones comprobadas (`VERIFICADA_VISIBLE`).
   - **Modalidad B (Oportunidad Exploratoria):** Si no hay certeza o el sitio está intacto, formula una pregunta abierta y respetuosa orientada a descubrir necesidades.
-- Opera 100% offline con plantillas determinísticas locales y, si se conecta la clave de Gemini, refina el estilo sin violar las directrices de CÍDIKS.
+- Opera 100% offline con reglas determinísticas (consumo de tokens = 0). La clave de Gemini puede configurarse, pero el copiloto **no** la usa: los parámetros `use_ai`/`api_key` se ignoran a propósito (ver `APRENDIZAJE_ERRORES.md`).
+- Giros, servicios CÍDIKS (web, marketing, CRM, automatizaciones, IA y consultoría), preguntas y plantillas viven en `docs/reglas/sabueso_reglas.json`, compartido con Sabueso Móvil (`docs/motor.js`). Agregar un giro no requiere modificar el código.
+- Orden de decisión del servicio: necesidad confirmada por el prospecto > elección humana > reglas del giro.
+
+### 2.6 Validación de identidad y revisión de borradores (`validacion.py`)
+- Nombre vs dominio, sitio de directorio, contacto compartido y giro discrepante generan **revisión humana** (nunca invalidación automática). La confirmación queda en la bitácora de auditoría.
+- Cada borrador se revisa antes de enviarse: bloqueo (saludo u mención a otro negocio), revisión (vocabulario de otro giro sin evidencia) y avisos (largo desde 200 caracteres, más de una pregunta, frases genéricas, jerga). La longitud nunca bloquea por sí sola.

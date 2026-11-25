@@ -568,7 +568,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const isFav = favorites.includes(favKey) || favorites.includes(webUrl);
 
             tr.innerHTML = `
-                <td><strong>${escapeHtml(p.nombre || p["Nombre del negocio"])}</strong></td>
+                <td><strong>${escapeHtml(p.nombre || p["Nombre del negocio"])}</strong>${p.identidad_requiere_revision ? ' <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);" title="El nombre, el giro o el contacto necesitan revisión humana"><i class="fa-solid fa-user-shield"></i> Revisar identidad</span>' : ''}</td>
                 <td>${webHtml}</td>
                 <td>${canalBadge}</td>
                 <td>${servHtml}</td>
@@ -811,7 +811,9 @@ document.addEventListener("DOMContentLoaded", () => {
             renderEvidenceInPanel(p);
 
             // Outreach links
+            renderIdentityReview(p);
             updateOutreachLinks(p);
+            requestMessageReview();
 
             detailPanel.classList.remove("hidden");
             if (panelClose) panelClose.focus();
@@ -904,6 +906,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         updateOutreachLinks(p);
+        requestMessageReview();
     };
 
     function isProspectBlocked(p, msgText) {
@@ -911,8 +914,154 @@ document.addEventListener("DOMContentLoaded", () => {
         if (p.identidad_verificada === 0 || p.identidad_verificada === false) return true;
         if (p.servicio_sugerido === "no_contactar" || p.servicio_sugerido === "investigar_mas") return true;
         const m = (msgText || "").trim();
-        if (m.startsWith("[BLOQUEADO") || m.startsWith("[RECOMENDACIÓN")) return true;
+        if (m.startsWith("[BLOQUEADO") || m.startsWith("[RECOMENDACIÓN") || m.startsWith("[REVISIÓN")) return true;
         return false;
+    }
+
+    // ========================================
+    // Revisión determinista del borrador (0 tokens) y de identidad
+    // ========================================
+    let msgReview = { texto: null, data: null };
+    let reviewTimer = null;
+    let reviewSeq = 0;
+    const msgReviewBox = document.getElementById("msg-review-box");
+    const SEV_COLOR = { bloqueo: "#ef4444", revision: "#f59e0b", advertencia: "#eab308", info: "var(--text-muted)" };
+    const SEV_LABEL = { bloqueo: "Bloqueo", revision: "Requiere revisión", advertencia: "Aviso", info: "Info" };
+
+    function qaEstado() {
+        const texto = editMessage ? editMessage.value : "";
+        if (!texto.trim()) return { bloquear: false, motivo: "" };
+        if (msgReview.texto !== texto || !msgReview.data) return { bloquear: true, motivo: "Revisando el mensaje…" };
+        const d = msgReview.data;
+        if (d.bloqueado) {
+            const h = d.hallazgos.find(x => x.severidad === "bloqueo");
+            return { bloquear: true, motivo: h ? h.mensaje : "El mensaje tiene un bloqueo." };
+        }
+        if (d.requiere_aprobacion && !(editMsgApproved && editMsgApproved.checked)) {
+            return { bloquear: true, motivo: "Hay observaciones que requieren revisión: marca «Mensaje revisado y aprobado por humano» para habilitar el envío." };
+        }
+        return { bloquear: false, motivo: "" };
+    }
+
+    function renderMsgReview() {
+        if (!msgReviewBox) return;
+        const d = msgReview.data;
+        if (!d || msgReview.texto !== (editMessage ? editMessage.value : "")) { msgReviewBox.innerHTML = ""; return; }
+        const m = d.metricas;
+        let html = `<div>${escapeHtml(m.caracteres)} caracteres · ${escapeHtml(m.preguntas)} pregunta(s) · objetivo 80–180 · revisión local (0 tokens)</div>`;
+        if (d.hallazgos.length) {
+            html += "<ul style='margin: 4px 0 0 16px; padding: 0;'>" + d.hallazgos.map(h =>
+                `<li style="color: ${SEV_COLOR[h.severidad] || "inherit"};"><strong>${escapeHtml(SEV_LABEL[h.severidad] || h.severidad)}:</strong> ${escapeHtml(h.mensaje)}</li>`).join("") + "</ul>";
+        }
+        msgReviewBox.innerHTML = html;
+    }
+
+    async function requestMessageReview() {
+        if (!selectedProspectId || !editMessage) return;
+        const texto = editMessage.value;
+        const seq = ++reviewSeq;
+        try {
+            const res = await fetch("/api/mensajes/revisar", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: selectedProspectId, texto, tipo: activeTab === "seg" ? "seguimiento" : "inicial" })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "No se pudo revisar el mensaje");
+            if (seq !== reviewSeq) return;
+            msgReview = { texto, data };
+        } catch (err) {
+            if (seq !== reviewSeq) return;
+            msgReview = { texto, data: { hallazgos: [{ codigo: "ERROR", severidad: "bloqueo", mensaje: "No se pudo revisar el mensaje: " + err.message }], bloqueado: true, requiere_aprobacion: false, metricas: { caracteres: texto.length, preguntas: (texto.match(/\?/g) || []).length } } };
+        }
+        renderMsgReview();
+        const p = prospects.find(x => x.id === selectedProspectId);
+        if (p) updateOutreachLinks(p);
+    }
+
+    function scheduleMessageReview() {
+        clearTimeout(reviewTimer);
+        reviewTimer = setTimeout(requestMessageReview, 300);
+    }
+
+    if (editMessage) {
+        editMessage.addEventListener("input", () => {
+            const p = prospects.find(x => x.id === selectedProspectId);
+            if (p) updateOutreachLinks(p);
+            scheduleMessageReview();
+        });
+    }
+    if (editMsgApproved) {
+        editMsgApproved.addEventListener("change", () => {
+            const p = prospects.find(x => x.id === selectedProspectId);
+            if (p) updateOutreachLinks(p);
+        });
+    }
+
+    let sectoresCargados = false;
+    async function cargarSectores() {
+        if (sectoresCargados) return;
+        try {
+            const lista = await (await fetch("/api/reglas/sectores")).json();
+            const dl = document.getElementById("identity-sector-options");
+            if (dl) dl.innerHTML = lista.map(x => `<option value="${escapeHtml(x.nombre)}"></option>`).join("");
+            sectoresCargados = true;
+        } catch { /* opcional */ }
+    }
+
+    function renderIdentityReview(p) {
+        const box = document.getElementById("identity-review-box");
+        const ok = document.getElementById("identity-review-ok");
+        const list = document.getElementById("identity-review-list");
+        if (!box || !ok || !list) return;
+        const r = p && p.revision_identidad;
+        const revisables = r ? r.hallazgos.filter(h => h.severidad === "revision") : [];
+        box.style.display = r && r.requiere_revision ? "block" : "none";
+        list.innerHTML = revisables.map(h => `<li>${escapeHtml(h.mensaje)}</li>`).join("");
+        if (r && r.confirmada_por_humano) {
+            ok.style.display = "block";
+            ok.textContent = `Identidad revisada por una persona${p.identidad_revisada_en ? " el " + new Date(p.identidad_revisada_en).toLocaleString("es-MX") : ""}.`;
+        } else {
+            ok.style.display = "none";
+        }
+        const fixName = document.getElementById("identity-fix-name");
+        if (fixName) fixName.value = p ? (p.nombre || "") : "";
+        if (r && r.requiere_revision) cargarSectores();
+    }
+
+    async function sendIdentityReview(payload) {
+        if (!selectedProspectId) return;
+        try {
+            const res = await fetch("/api/prospects/identity-review", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: selectedProspectId, ...payload })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "No se pudo guardar la revisión.");
+            showToast("success", "Identidad revisada", "Se regeneraron los borradores con los datos revisados. Revisa el mensaje antes de enviarlo.");
+            await loadProspects();
+            selectProspect(selectedProspectId);
+        } catch (err) {
+            showToast("error", "Error", err.message);
+        }
+    }
+
+    const btnIdentityConfirm = document.getElementById("btn-identity-confirm");
+    if (btnIdentityConfirm) {
+        btnIdentityConfirm.addEventListener("click", () => {
+            const nota = (document.getElementById("identity-review-note") || {}).value || "";
+            sendIdentityReview({ decision: "confirmar", nota });
+        });
+    }
+    const btnIdentityFix = document.getElementById("btn-identity-fix");
+    if (btnIdentityFix) {
+        btnIdentityFix.addEventListener("click", () => {
+            const nombre = ((document.getElementById("identity-fix-name") || {}).value || "").trim();
+            const sector = ((document.getElementById("identity-fix-sector") || {}).value || "").trim();
+            const nota = (document.getElementById("identity-review-note") || {}).value || "";
+            sendIdentityReview({ decision: "corregir", nombre, sector, nota });
+        });
     }
 
     function updateOpenState(p) {
@@ -931,12 +1080,17 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateOutreachLinks(p) {
         updateOpenState(p);
         const msg = editMessage ? editMessage.value : "";
-        const blocked = isProspectBlocked(p, msg);
+        const identityBlocked = isProspectBlocked(p, msg);
+        const qa = qaEstado();
+        const blocked = identityBlocked || qa.bloquear;
         const phone = p.whatsapp || p.telefono || "";
         const cleanPhone = phone.replace(/\D/g, "");
 
         if (outreachBlockedWarning) {
             outreachBlockedWarning.style.display = blocked ? "block" : "none";
+            outreachBlockedWarning.innerHTML = identityBlocked || !qa.motivo
+                ? '<i class="fa-solid fa-triangle-exclamation"></i> <strong>Envío bloqueado:</strong> Verifica primero la identidad comercial o elige un enfoque manual antes de contactar.'
+                : `<i class="fa-solid fa-triangle-exclamation"></i> <strong>Envío en pausa:</strong> ${escapeHtml(qa.motivo)}`;
         }
         if (btnCopyMsg) {
             btnCopyMsg.disabled = blocked;
@@ -970,9 +1124,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (btnConfirmContactModal) {
-            btnConfirmContactModal.disabled = blocked;
-            btnConfirmContactModal.style.opacity = blocked ? "0.4" : "1";
-            btnConfirmContactModal.title = blocked 
+            // Confirmar un contacto que ya ocurrió no depende de la revisión del borrador actual.
+            btnConfirmContactModal.disabled = identityBlocked;
+            btnConfirmContactModal.style.opacity = identityBlocked ? "0.4" : "1";
+            btnConfirmContactModal.title = identityBlocked 
                 ? "No es posible registrar nuevo contacto: prospecto bloqueado o pendiente de investigación." 
                 : "Registrar contacto humano realizado";
         }
@@ -985,6 +1140,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const p = prospects.find(x => x.id === selectedProspectId);
             if (isProspectBlocked(p, msg)) {
                 showToast("error", "Envío bloqueado", "Verifica primero la identidad comercial o elige un enfoque válido antes de copiar.");
+                return;
+            }
+            const qa = qaEstado();
+            if (qa.bloquear) {
+                showToast("warning", "Envío en pausa", qa.motivo);
+                if (msgReview.texto !== msg) requestMessageReview();
                 return;
             }
             if (!msg) {

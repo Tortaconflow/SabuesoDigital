@@ -10,7 +10,7 @@
 (function () {
     "use strict";
 
-    const APP_VERSION = "1.1.0";
+    const APP_VERSION = "1.2.0";
     const FORMATO_PC = "sabueso-movil";
     const FORMATO_AVANCES = "sabueso-movil-avances";
     const FORMATO_RESPALDO = "sabueso-movil-respaldo";
@@ -39,7 +39,7 @@
         "prioridad", "estado_comercial", "problemas_detectados", "observacion_verificada", "hipotesis_comercial",
         "pregunta_comercial", "servicio_sugerido", "mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento",
         "notas", "fecha_contacto_confirmada", "canal", "respuesta", "necesidad_expresada", "siguiente_accion",
-        "fecha_seguimiento", "movil_uid", "bandeja_contacto", "ultimo_intento_whatsapp", "pais"
+        "fecha_seguimiento", "movil_uid", "bandeja_contacto", "ultimo_intento_whatsapp", "pais", "identidad_revisada_firma"
     ];
     const CAMPOS_NUM = ["puntuacion", "propuesta_monto", "venta_monto", "ingreso_cobrado", "intentos_whatsapp"];
     const CAMPOS_FLAG = ["propuesta_enviada", "venta_acordada", "mensaje_aprobado", "identidad_verificada"];
@@ -188,7 +188,7 @@
         if (Number(p.identidad_verificada) === 0) return true;
         if (p.servicio_sugerido === "no_contactar" || p.servicio_sugerido === "investigar_mas") return true;
         const m = String(mensaje ?? p.mensaje_personalizado ?? "").trim();
-        return m.startsWith("[BLOQUEADO") || m.startsWith("[RECOMENDACIÓN");
+        return m.startsWith("[BLOQUEADO") || m.startsWith("[RECOMENDACIÓN") || m.startsWith("[REVISIÓN");
     }
 
     let toastTimer = null;
@@ -206,75 +206,13 @@
     // nunca se usan para unir prospectos.
     // ======================================================================
     const ESTADOS_CONTACTADOS = new Set(["contactado", "interesado", "no_interesa", "propuesta", "ganado"]);
-    const MARCAS_MEXICO = [
-        "mexico", "cdmx", "aguascalientes", "baja california", "campeche", "chiapas", "chihuahua",
-        "coahuila", "colima", "durango", "guanajuato", "guerrero", "hidalgo", "jalisco", "michoacan",
-        "morelos", "nayarit", "nuevo leon", "oaxaca", "puebla", "queretaro", "quintana roo",
-        "san luis potosi", "sinaloa", "sonora", "tabasco", "tamaulipas", "tlaxcala", "veracruz",
-        "yucatan", "zacatecas", "puerto escondido", "zicatela", "bacocho", "carrizalillo", "mazunte",
-        "zipolite", "huatulco", "chahue", "santa cruz huatulco", "puerto angel", "san agustinillo",
-        "pochutla", "chacahua", "juquila", "pinotepa", "salina cruz", "juchitan", "tehuantepec", "mitla", "tlacolula"
-    ];
-    const RE_MEXICO = new RegExp(`\\b(${MARCAS_MEXICO.join("|")})\\b`);
-
-    function paisDelProspecto(p) {
-        const explicito = sinAcentos(p.pais || "");
-        if (explicito) return ["mx", "mex", "mexico"].includes(explicito) ? "MX" : explicito.toUpperCase().slice(0, 2);
-        const ubicacion = sinAcentos(`${p.municipio || ""} ${p.direccion || ""}`);
-        if (ubicacion.includes("nuevo mexico") || ubicacion.includes("new mexico")) return "";
-        return RE_MEXICO.test(ubicacion) ? "MX" : "";
-    }
-
-    function validarMx(nacional) {
-        if (nacional.length !== 10 || "01".includes(nacional[0]) || new Set(nacional).size <= 2) {
-            return { estado: "invalido", e164: "", motivo: "número mexicano inválido" };
-        }
-        return { estado: "valido", e164: `+52${nacional}`, motivo: "" };
-    }
-
-    function normalizarTelefono(raw, pais = "", esWhatsapp = false) {
-        let s = String(raw ?? "").trim();
-        if (!s) return { estado: "invalido", e164: "", motivo: "sin número" };
-        s = s.replace(/\s*(?:ext\.?|extension|extensión|x)\s*\d+\s*$/i, "").replace(/[\s\-(). ]/g, "");
-        let internacional = false;
-        if (s.startsWith("+")) { internacional = true; s = s.slice(1); }
-        else if (s.startsWith("00") && s.length >= 11) { internacional = true; s = s.slice(2); }
-        if (!/^\d+$/.test(s)) return { estado: "invalido", e164: "", motivo: "contiene caracteres que no son dígitos" };
-        if (!internacional && ((s.length === 12 && s.startsWith("52")) || (s.length === 13 && s.startsWith("521")))) internacional = true;
-        else if (!internacional && esWhatsapp && s.length >= 11 && s.length <= 15) internacional = true;
-        if (internacional) {
-            if (s.startsWith("52")) {
-                let nacional = s.slice(2);
-                if (nacional.length === 11 && nacional.startsWith("1")) nacional = nacional.slice(1);
-                return validarMx(nacional);
-            }
-            if (s.length >= 8 && s.length <= 15 && new Set(s).size > 2 && !s.startsWith("0")) return { estado: "valido", e164: `+${s}`, motivo: "" };
-            return { estado: "invalido", e164: "", motivo: "número internacional con longitud inválida" };
-        }
-        if (s.length === 10) {
-            if ((pais || "").toUpperCase() === "MX") return validarMx(s);
-            return { estado: "ambiguo", e164: "", motivo: pais ? `sin código de país para ${pais}` : "sin código de país y país del prospecto desconocido" };
-        }
-        if (s.length >= 7 && s.length <= 9) return { estado: "ambiguo", e164: "", motivo: "número local sin lada" };
-        return { estado: "invalido", e164: "", motivo: "longitud inválida" };
-    }
-
-    function clavesContacto(p) {
-        const pais = paisDelProspecto(p);
-        const claves = [], estados = [];
-        for (const [campo, esWa] of [["whatsapp", true], ["telefono", false]]) {
-            const valor = String(p[campo] || "").trim();
-            if (!valor) continue;
-            for (const parte of valor.split(/[,;/|\n]|\s+(?:y|o|or|and)\s+/i)) {
-                if (!parte || !parte.trim()) continue;
-                const r = normalizarTelefono(parte, pais, esWa);
-                estados.push(r.estado);
-                if (r.estado === "valido" && !claves.includes(r.e164)) claves.push(r.e164);
-            }
-        }
-        const estadoTel = claves.length ? "valido" : estados.includes("ambiguo") ? "ambiguo" : estados.length ? "invalido" : "sin_telefono";
-        return { claves, estado: estadoTel, pais };
-    }
+    // Teléfonos, reglas, revisión y copiloto: motor compartido con la PC (docs/motor.js).
+    const M = window.SabuesoMotor;
+    const normalizarTelefono = M.normalizarTelefono;
+    const clavesContacto = M.clavesContacto;
+    const paisDelProspecto = M.paisDelProspecto;
+    let REGLAS = null;          // docs/reglas/sabueso_reglas.json (se carga al iniciar)
+    const aprobacionesMensaje = new Set();   // «Lo revisé y es correcto» por texto exacto (no se guarda)
 
     function bandejaDe(p) {
         if (p.fecha_contacto_confirmada || ESTADOS_CONTACTADOS.has(p.estado_comercial)) return "contactado";
@@ -433,6 +371,12 @@
             v.ultimo_intento_whatsapp = ev.fecha;
         } else if (ev.tipo === "regresar_pendientes") {
             v.bandeja_contacto = "pendiente";
+        } else if (ev.tipo === "revision_identidad") {
+            if (d.decision === "corregir") {
+                if (d.nombre) v.nombre = d.nombre;
+                if (d.sector) v.sector = d.sector;
+            }
+            v.identidad_revisada_firma = d.firma_resultante || d.firma_vista || "";
         }
     }
 
@@ -444,14 +388,20 @@
         }
         const vistas = {};
         for (const [uid, base] of Object.entries(estado.prospectos)) {
-            const v = { ...base, uid, notas_movil: [], historial: porUid[uid] || [] };
+            const v = { ...base, uid, id: base.pc_id ?? null, notas_movil: [], historial: porUid[uid] || [] };
             for (const ev of v.historial) {
                 if (!ev.sincronizado) aplicarEvento(v, ev);
             }
             v.pendientes = v.historial.filter((e) => !e.sincronizado).length;
             vistas[uid] = v;
         }
-        return anotarBandejas(vistas);
+        anotarBandejas(vistas);
+        if (REGLAS) {
+            const lista = Object.values(vistas);
+            const indice = M.indiceClaves(lista);
+            for (const v of lista) v.identidad = M.analizarIdentidad(v, null, REGLAS, indice);
+        }
+        return vistas;
     }
 
     function ordenar(lista) {
@@ -471,99 +421,15 @@
     const eventosPendientes = () => estado.eventos.filter((e) => !e.sincronizado);
 
     // ======================================================================
-    // Copiloto CÍDIKS (versión de bolsillo para prospectos agregados en el celular)
-    // Mantener alineado con copilot.py: Modalidad B (oportunidad exploratoria), sin halagos
-    // ni afirmaciones que no se hayan comprobado.
+    // Copiloto CÍDIKS: el mismo motor determinista que la PC (0 tokens).
     // ======================================================================
-    const RE_HOSPEDAJE = /hotel|hosped|posada|hostal|hostel|caba[nñ]a|bungalow|glamping|suite|villa|resort|casa de hu[eé]sped/i;
-
-    function capacidad(servicio, hospedaje) {
-        const textos = {
-            catalogos: ["Catálogos digitales para WhatsApp", hospedaje
-                ? "catálogos digitales y fichas ligeras de habitaciones y tarifas para responder consultas en WhatsApp"
-                : "catálogos digitales de productos y servicios para responder consultas en WhatsApp"],
-            web: ["Presencia web con contacto directo", hospedaje
-                ? "páginas web rápidas conectadas a WhatsApp para facilitar consultas y reservaciones directas"
-                : "páginas web rápidas conectadas a WhatsApp para que los clientes los encuentren y escriban directo"],
-            flyers: ["Flyers y promociones de temporada", "diseño de promociones, paquetes de temporada y piezas visuales para estados de WhatsApp y redes"],
-            redes_sociales: ["Contenido digital y redes sociales", "organización visual de perfiles en Instagram y Facebook orientados a convertir visitas en consultas directas"],
-            diseno: ["Diseño gráfico comercial", hospedaje
-                ? "diseño de menús, guías para huéspedes, mapas locales y materiales de presentación del hospedaje"
-                : "diseño de menús, catálogos impresos y digitales, y materiales de presentación del negocio"]
-        };
-        const [nombre, descripcion] = textos[servicio] || textos.catalogos;
-        return { nombre, descripcion };
+    function generarMensajes(p, contexto) {
+        if (!REGLAS) return null;
+        return M.generarMensajes(p, REGLAS, contexto || []);
     }
-
-    function elegirServicio(p) {
-        const n = sinAcentos(`${p.nombre} ${p.sector}`);
-        const tieneWa = !!p.whatsapp;
-        if (!p.web) {
-            if (!tieneWa && p.redes_sociales) return "redes_sociales";
-            return "web";
-        }
-        if (/tour|surf|experiencia|viaje|aventura|mezcal|ecoturismo/.test(n)) return "flyers";
-        if (/restaurante|cafe|palapa|bistro|bar|mirador|cocina|comida|fonda|taquer/.test(n)) return "diseno";
-        if (!tieneWa) return p.redes_sociales ? "redes_sociales" : "web";
-        return "catalogos";
-    }
-
-    function preguntaAdaptada(servicio, p, hospedaje) {
-        const wa = waComprobado(p);
-        if (hospedaje) {
-            if (servicio === "catalogos") return wa
-                ? "¿Actualmente comparten sus tipos de habitación y tarifas por WhatsApp mediante algún catálogo digital o los detallan en cada mensaje?"
-                : "¿Actualmente manejan algún número de WhatsApp con catálogo de habitaciones para enviar informes a quienes llaman o escriben?";
-            if (servicio === "web") return wa
-                ? "¿Hoy los viajeros los encuentran principalmente por Google Maps y redes, o les gustaría tener una página propia conectada a su WhatsApp?"
-                : "¿Tienen previsto incorporar atención por WhatsApp o prefieren centralizar las reservaciones por teléfono y correo?";
-        }
-        const generales = {
-            catalogos: "¿Actualmente comparten sus productos o servicios por WhatsApp con algún catálogo digital o los detallan en cada mensaje?",
-            web: "¿Hoy sus clientes los encuentran principalmente por Google Maps y redes, o les gustaría tener una página propia conectada a WhatsApp?",
-            flyers: "¿Suelen preparar flyers o promociones de temporada para compartir por WhatsApp y redes?",
-            redes_sociales: "¿Actualmente las consultas de sus clientes les llegan más por redes sociales o directo por WhatsApp?",
-            diseno: "¿Cuentan actualmente con menú, catálogo o materiales de presentación actualizados para esta temporada?"
-        };
-        return generales[servicio] || generales.catalogos;
-    }
-
-    function generarMensajes(p) {
-        const nombre = p.nombre || "su negocio";
-        const loc = p.municipio ? ` en ${p.municipio}` : "";
-        if (!Number(p.identidad_verificada)) {
-            const bloq = `[BLOQUEADO — NO CONTACTAR TODAVÍA]\nMotivo: no confirmaste que ${nombre} exista y que sus datos de contacto sean públicos.\nAcción recomendada: verifica primero el negocio y su canal oficial antes de escribir.`;
-            return { servicio_sugerido: "no_contactar", mensaje_personalizado: bloq, mensaje_calido: bloq, mensaje_seguimiento: bloq };
-        }
-        const hospedaje = RE_HOSPEDAJE.test(`${p.nombre} ${p.sector}`);
-        const servicio = elegirServicio(p);
-        const cap = capacidad(servicio, hospedaje);
-        const pregunta = preguntaAdaptada(servicio, p, hospedaje);
-        const aperturas = {
-            maps: `Vi en Google Maps la ficha de ${nombre}${loc}.`,
-            facebook: `Vi en Facebook la página de ${nombre}${loc}.`,
-            instagram: `Vi en Instagram el perfil de ${nombre}${loc}.`,
-            persona: `Pasé por ${nombre}${loc} y tomé sus datos de contacto.`,
-            recomendacion: `Me compartieron los datos de contacto de ${nombre}${loc}.`,
-            web: `Revisé la página de ${nombre}${loc}.`,
-            otro: `Ubicamos los datos de contacto de ${nombre}${loc} a través de sus canales públicos.`
-        };
-        const apertura = aperturas[p.fuente] || aperturas.otro;
-        const grupo = hospedaje ? "hospedajes de la región" : "negocios locales de Oaxaca";
-        let hash = 0;
-        for (const ch of nombre) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-        const estilos = [
-            `Hola, buen día al equipo de ${nombre}. Les saludo desde CÍDIKS en Oaxaca.\n\n${apertura} En CÍDIKS colaboramos con ${grupo} en ${cap.descripcion}.\n\n${pregunta}`,
-            `Hola, equipo de ${nombre}. Les escribo de CÍDIKS aquí en Oaxaca.\n\n${apertura} Apoyamos a ${grupo} con ${cap.descripcion}.\n\n${pregunta}`,
-            `Buen día al equipo de ${nombre}, les saludo de CÍDIKS en Oaxaca.\n\n${apertura} Trabajamos con ${grupo} desarrollando ${cap.descripcion}.\n\n${pregunta}`
-        ];
-        return {
-            servicio_sugerido: servicio,
-            mensaje_personalizado: estilos[hash % 3],
-            mensaje_calido: `Hola, equipo de ${nombre}, buen día desde CÍDIKS en Oaxaca.\n\n${apertura} Desarrollamos ${cap.descripcion} para ${grupo}.\n\n${pregunta}`,
-            mensaje_seguimiento: `Hola de nuevo al equipo de ${nombre}, espero que vaya muy bien la semana${loc}.\n\nLes escribí hace unos días respecto a ${cap.nombre.toLowerCase()}. Si en este momento tienen cubierto el tema no hay ningún inconveniente; quedo a la orden si más adelante desean revisar algún ejemplo.`
-        };
-    }
+    const CAMPOS_GENERADOS = ["servicio_sugerido", "mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento",
+        "observacion_verificada", "hipotesis_comercial", "pregunta_comercial"];
+    const soloGenerados = (res) => Object.fromEntries(CAMPOS_GENERADOS.map((k) => [k, res[k] || ""]));
 
     // ======================================================================
     // Importar desde la PC (JSON recomendado, o el CSV de "Exportar CSV")
@@ -1042,7 +908,28 @@
         const tel = digitosTel(p.telefono || p.whatsapp);
         const email = (p.email || "").split(/[,;\s]/).find((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)) || "";
         const web = urlSegura(p.web);
-        const puedeWa = !bloqueado && !!waDig;
+        const contextoLista = Object.values(vistas);
+        const tipoMsg = tabMensaje === "mensaje_seguimiento" ? "seguimiento" : "inicial";
+        const panelRevision = h("div", { class: "revision-msg", "aria-live": "polite" });
+        const casillaAprobar = h("input", { type: "checkbox", id: "msg-aprobado" });
+        const filaAprobar = h("label", { class: "check oculto" }, casillaAprobar, "Lo revisé y este mensaje es correcto para este negocio.");
+        const claveAprobacion = () => `${uid}|${tabMensaje}|${M.fnv1a(area.value)}`;
+        casillaAprobar.addEventListener("change", () => {
+            if (casillaAprobar.checked) aprobacionesMensaje.add(claveAprobacion()); else aprobacionesMensaje.delete(claveAprobacion());
+            actualizarEnvio();
+        });
+        // ¿Se puede enviar? Bloqueos del prospecto + revisión determinista del texto + aprobación humana.
+        const estadoEnvio = () => {
+            if (bloqueado) return { permitido: false, motivo: "Prospecto bloqueado.", qa: null };
+            if (!REGLAS) return { permitido: false, motivo: "No se cargaron las reglas de revisión. Abre la app una vez con internet.", qa: null };
+            const qa = M.revisarMensaje(area.value, p, contextoLista, tipoMsg, REGLAS);
+            if (qa.bloqueado) return { permitido: false, motivo: (qa.hallazgos.find((x) => x.severidad === "bloqueo") || {}).mensaje, qa };
+            if (qa.requiere_aprobacion && !aprobacionesMensaje.has(claveAprobacion())) {
+                return { permitido: false, motivo: "Marca «Lo revisé y este mensaje es correcto» para habilitar el envío.", qa };
+            }
+            return { permitido: !!waDig, motivo: waDig ? "" : "Sin número de WhatsApp.", qa, copiar: true };
+        };
+        const puedeWa = estadoEnvio().permitido;
 
         // Enlace real (tocado por la persona) para que iOS abra la app de WhatsApp con el mensaje.
         const enlaceWa = () => `https://wa.me/${waDig}?text=${encodeURIComponent(area.value)}`;
@@ -1055,7 +942,7 @@
         // Al pulsar se registra el intento y pasa a Abiertos. Esto NO confirma que el mensaje se envió
         // (ni siquiera que WhatsApp se haya abierto): eso solo lo confirma la persona.
         const marcarEnvio = (e) => {
-            if (!puedeWa) { e.preventDefault(); return; }
+            if (!estadoEnvio().permitido) { e.preventDefault(); toast(estadoEnvio().motivo || "Envío en pausa."); return; }
             const ev = nuevoEvento("whatsapp_abierto", uid, {
                 telefono_e164: p.claves_contacto[0] || "", mensaje: texto(area.value, 5000), plantilla: tabMensaje
             });
@@ -1069,6 +956,8 @@
         btnWaApp.addEventListener("click", marcarEnvio);
         const btnCopiar = h("button", { class: "btn", type: "button", disabled: bloqueado }, "Copiar");
         btnCopiar.addEventListener("click", async () => {
+            const est = estadoEnvio();
+            if (!est.permitido && !est.copiar) { toast(est.motivo || "Envío en pausa."); return; }
             try { await navigator.clipboard.writeText(area.value); }
             catch { area.select(); document.execCommand("copy"); }
             toast("Mensaje copiado. Cuando lo envíes, confirma el contacto aquí.");
@@ -1084,7 +973,7 @@
             if (area.value === mensajeActual) delete estado.borradores[claveBorrador];
             else estado.borradores[claveBorrador] = area.value;
             btnGuardarMsg.classList.toggle("oculto", area.value === mensajeActual);
-            if (puedeWa) { btnWa.href = enlaceWa(); btnWaApp.href = enlaceWaApp(); }
+            actualizarEnvio();
             clearTimeout(timerBorrador);
             timerBorrador = setTimeout(() => guardar().catch(() => { }), 700);
         });
@@ -1095,6 +984,49 @@
             toast("Mensaje guardado.", "ok");
             render();
         });
+
+        const SEV = { bloqueo: "Bloqueo", revision: "Requiere revisión", advertencia: "Aviso", info: "Info" };
+        function actualizarEnvio() {
+            const est = estadoEnvio();
+            const ok = est.permitido;
+            btnWa.classList.toggle("deshabilitado", !ok);
+            btnWa.href = ok ? enlaceWa() : "#";
+            btnWaApp.classList.toggle("oculto", !ok);
+            btnWaApp.href = ok ? enlaceWaApp() : "#";
+            btnCopiar.disabled = bloqueado || !(ok || est.copiar);
+            filaAprobar.classList.toggle("oculto", !(est.qa && est.qa.requiere_aprobacion && !est.qa.bloqueado));
+            casillaAprobar.checked = aprobacionesMensaje.has(claveAprobacion());
+            if (!est.qa) { panelRevision.replaceChildren(est.motivo ? h("p", { class: "muy-chico" }, est.motivo) : ""); return; }
+            const m = est.qa.metricas;
+            panelRevision.replaceChildren(
+                h("p", { class: "muy-chico" }, `${m.caracteres} caracteres · ${m.preguntas} pregunta(s) · objetivo 80–180 · revisión local (0 tokens)`),
+                est.qa.hallazgos.length ? h("ul", { class: "hallazgos" }, est.qa.hallazgos.map((x) =>
+                    h("li", { class: `sev-${x.severidad}` }, h("strong", null, `${SEV[x.severidad] || x.severidad}: `), x.mensaje))) : null,
+                !ok && est.motivo ? h("p", { class: "chico sev-revision" }, est.motivo) : null
+            );
+        }
+
+        // Revisión humana de identidad (nombre vs sitio, giro, contacto compartido): nunca invalida.
+        const ident = p.identidad;
+        let avisoIdentidad = null;
+        if (ident && ident.requiere_revision) {
+            const nota = h("input", { type: "text", placeholder: "Nota: cómo lo comprobaste (opcional)" });
+            const nombreOk = h("input", { type: "text", value: p.nombre || "" });
+            const giroOk = h("select", null, h("option", { value: "" }, "— Giro sin cambios —"),
+                (REGLAS ? REGLAS.sectores : []).map((sec) => h("option", { value: sec.nombre }, sec.nombre)));
+            avisoIdentidad = h("div", { class: "aviso aviso-alerta" },
+                h("strong", null, "Revisión humana: ¿es este negocio?"),
+                h("ul", { class: "hallazgos" }, ident.hallazgos.filter((x) => x.severidad === "revision").map((x) => h("li", null, x.mensaje))),
+                h("div", { class: "campo" }, nota),
+                h("button", { class: "btn btn-ok btn-bloque", type: "button", onclick: () => revisarIdentidad(uid, "confirmar", { nota: texto(nota.value, 2000) }, vistas) }, "Sí, es este negocio: confirmar"),
+                h("details", null, h("summary", null, "Corregir nombre o giro"),
+                    h("div", { class: "campo" }, h("label", null, "Nombre correcto"), nombreOk),
+                    h("div", { class: "campo" }, h("label", null, "Giro correcto"), giroOk),
+                    h("button", { class: "btn btn-bloque", type: "button", onclick: () => revisarIdentidad(uid, "corregir", {
+                        nombre: texto(nombreOk.value, 200), sector: giroOk.value, nota: texto(nota.value, 2000) }, vistas) }, "Guardar corrección"))
+            );
+        }
+        const btnRegenerar = h("button", { class: "btn btn-texto", type: "button", onclick: () => regenerarBorrador(uid, vistas) }, "Regenerar borrador con las reglas actuales");
 
         const contactoInfo = fueContactado(p) && p.fecha_contacto_confirmada
             ? h("div", { class: "aviso aviso-ok" }, h("strong", null, "Contacto confirmado"),
@@ -1132,6 +1064,7 @@
             ),
             bloqueado ? h("div", { class: "aviso aviso-peligro" }, h("strong", null, "No contactar todavía"),
                 "Sabueso marcó este prospecto como bloqueado (identidad sin verificar o requiere investigar más). No se puede enviar mensaje desde aquí.") : null,
+            avisoIdentidad,
             avisoAbierto,
             avisoRepetido,
             contactoInfo,
@@ -1139,7 +1072,10 @@
             h("h3", null, "Mensaje"),
             tabs,
             h("div", { class: "campo" }, area),
+            panelRevision,
+            filaAprobar,
             btnGuardarMsg,
+            btnRegenerar,
             h("div", { class: "fila-btns" }, btnWa, btnCopiar),
             btnWaApp,
             h("div", { class: "fila-btns fila-btns-3" },
@@ -1192,6 +1128,45 @@
         );
         panel.classList.remove("oculto");
         panel.scrollTop = scroll;
+        actualizarEnvio();
+    }
+
+    // Guarda la revisión humana de identidad (evento para la PC) y regenera los borradores.
+    async function revisarIdentidad(uid, decision, datos, vistas) {
+        const v = vistas[uid];
+        if (!v || !REGLAS) return;
+        if (decision === "corregir" && !datos.nombre && !datos.sector) { toast("Escribe el nombre o elige el giro correcto."); return; }
+        const corregido = { ...v };
+        if (decision === "corregir") {
+            if (datos.nombre) corregido.nombre = datos.nombre;
+            if (datos.sector) corregido.sector = datos.sector;
+        }
+        const firma = M.firmaIdentidad(corregido, REGLAS);
+        nuevoEvento("revision_identidad", uid, {
+            decision, nota: datos.nota || "", nombre: datos.nombre || "", sector: datos.sector || "",
+            firma_vista: decision === "confirmar" ? v.identidad.firma : "", firma_resultante: firma
+        });
+        corregido.identidad_revisada_firma = firma;
+        const res = generarMensajes(corregido, Object.values(vistas));
+        if (res && !res.bloqueado_envio) {
+            nuevoEvento("actualizacion", uid, { mensaje_personalizado: res.mensaje_personalizado, mensaje_calido: res.mensaje_calido, mensaje_seguimiento: res.mensaje_seguimiento });
+            ["mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento"].forEach((k) => delete estado.borradores[`${uid}|${k}`]);
+        }
+        await guardar();
+        toast("Identidad revisada. Revisa el borrador antes de enviarlo.", "ok");
+        render();
+    }
+
+    async function regenerarBorrador(uid, vistas) {
+        const v = vistas[uid];
+        const res = v && generarMensajes(v, Object.values(vistas));
+        if (!res) { toast("No se cargaron las reglas: abre la app una vez con internet."); return; }
+        if (res.bloqueado_envio) { toast("Primero resuelve la revisión o el bloqueo del prospecto."); return; }
+        nuevoEvento("actualizacion", uid, { mensaje_personalizado: res.mensaje_personalizado, mensaje_calido: res.mensaje_calido, mensaje_seguimiento: res.mensaje_seguimiento });
+        ["mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento"].forEach((k) => delete estado.borradores[`${uid}|${k}`]);
+        await guardar();
+        toast("Borrador regenerado con las reglas actuales.", "ok");
+        render();
     }
 
     function itemHistorial(ev) {
@@ -1386,6 +1361,7 @@
         };
 
         const avisoDuplicado = h("div", { class: "aviso aviso-alerta oculto", role: "alert" });
+        let confirmarIdentidadAlta = false;
 
         const guardarNuevo = async () => {
             const nombre = texto(f.nombre.value, 200);
@@ -1425,7 +1401,24 @@
             if ((wa || tel) && nuevas.estado !== "valido") {
                 toast("No pude reconocer el número completo (falta lada o país): no se podrá detectar si se repite.");
             }
-            const msgs = generarMensajes(base);
+            let res = generarMensajes(base, Object.values(vistas));
+            if (!res) { toast("No se cargaron las reglas: abre la app una vez con internet."); return; }
+            if (res.revision.identidad_requiere_revision) {
+                if (!confirmarIdentidadAlta) {
+                    avisoDuplicado.replaceChildren(
+                        h("strong", null, "Revisa antes de agregar"),
+                        h("ul", { class: "hallazgos" }, res.revision.identidad.filter((x) => x.severidad === "revision").map((x) => h("li", null, x.mensaje))),
+                        h("button", { class: "btn btn-bloque", type: "button", onclick: () => { confirmarIdentidadAlta = true; guardarNuevo(); } }, "Los datos son correctos: agregar")
+                    );
+                    avisoDuplicado.classList.remove("oculto");
+                    avisoDuplicado.scrollIntoView({ block: "center" });
+                    return;
+                }
+                base.identidad_revisada_firma = res.revision.firma_identidad;
+                res = generarMensajes(base, Object.values(vistas));
+            }
+            confirmarIdentidadAlta = false;
+            const msgs = soloGenerados(res);
             const uid = `m-${uuid()}`;
             const datos = { ...base, ...msgs, notas: texto(f.notas.value, 2000) };
             estado.prospectos[uid] = {
@@ -1609,6 +1602,15 @@
         });
         actualizarRed();
 
+        try {
+            const resp = await fetch("reglas/sabueso_reglas.json", { cache: "no-cache" });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            REGLAS = await resp.json();
+        } catch {
+            REGLAS = null;
+            toast("No se pudieron cargar las reglas de revisión; el envío queda en pausa hasta abrir con internet.", "error");
+        }
+
         const guardado = await leerEstado();
         if (guardado && guardado.version === 1) {
             const base = estadoVacio();
@@ -1627,8 +1629,10 @@
 
     // Exponer funciones puras para pruebas automatizadas (sin efectos en la app).
     window.__sabuesoMovil = {
-        parseCSV, prospectosDesdeCSV, generarMensajes, estaBloqueado, digitosWa, urlSegura, normalizarEstado,
-        normalizarTelefono, clavesContacto, paisDelProspecto
+        parseCSV, prospectosDesdeCSV, estaBloqueado, digitosWa, urlSegura, normalizarEstado,
+        normalizarTelefono, clavesContacto, paisDelProspecto,
+        generarMensajes: (p) => generarMensajes(p, []),
+        reglas: () => REGLAS
     };
 
     iniciar().catch((err) => {

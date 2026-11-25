@@ -62,6 +62,15 @@ iPhone ── «Enviar avances» (menú Compartir) ──► sabueso_avances_…
   con otro formato (por ejemplo `954 123 4567` y `+52 (954) 123-4567`). Si el número no tiene lada de
   país y no se sabe el país del negocio, no se compara con otros.
 
+## Revisión antes de enviar (sin internet, 0 tokens)
+
+- Debajo de cada mensaje verás sus caracteres, sus preguntas y observaciones. El objetivo es de 80 a 180 caracteres con una sola pregunta. Pasar de 200 solo genera un aviso: la longitud nunca bloquea.
+- **Bloqueo:** el mensaje saluda o menciona a otro negocio. Corrígelo para poder enviarlo.
+- **Requiere revisión:** por ejemplo, una palabra de otro giro (habitaciones para una mueblería). Se habilita solo si marcas «Lo revisé y este mensaje es correcto».
+- **Revisión de identidad:** si el nombre no coincide con su sitio, el giro no cuadra o el número es de otro negocio, confirma o corrige antes de escribir. No se borra ni se descarta nada.
+- «Regenerar borrador con las reglas actuales» rehace mensajes viejos con el giro correcto.
+- Las reglas viven en `reglas/sabueso_reglas.json` (las mismas que usa la PC).
+
 ## Reglas CÍDIKS que respeta
 
 - Abrir WhatsApp o copiar un mensaje **no** marca a nadie como contactado: hay que confirmarlo.

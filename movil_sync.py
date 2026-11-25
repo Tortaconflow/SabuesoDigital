@@ -22,6 +22,7 @@ import re
 from datetime import datetime
 
 import db
+import validacion
 
 EXPORT_FORMAT = "sabueso-movil"
 AVANCES_FORMAT = "sabueso-movil-avances"
@@ -31,7 +32,7 @@ MAX_EVENTS = 5000
 MAX_TEXT = 2000
 MAX_MESSAGE = 5000
 
-EVENT_TYPES = {"nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota", "whatsapp_abierto", "regresar_pendientes"}
+EVENT_TYPES = {"nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota", "whatsapp_abierto", "regresar_pendientes", "revision_identidad"}
 CANALES = {"whatsapp", "llamada", "email", "redes", "persona"}
 ESTADOS_ACTUALIZABLES = {"investigado", "auditado", "interesado", "no_interesa", "propuesta", "ganado", "descartado"}
 FUENTES = {"maps", "facebook", "instagram", "persona", "recomendacion", "web", "otro"}
@@ -51,7 +52,7 @@ EXPORT_FIELDS = (
     "notas", "fecha_contacto_confirmada", "canal", "respuesta", "necesidad_expresada",
     "siguiente_accion", "fecha_seguimiento", "propuesta_enviada", "propuesta_monto",
     "venta_acordada", "venta_monto", "ingreso_cobrado", "movil_uid",
-    "bandeja_contacto", "intentos_whatsapp", "ultimo_intento_whatsapp",
+    "bandeja_contacto", "intentos_whatsapp", "ultimo_intento_whatsapp", "identidad_revisada_firma",
 )
 
 
@@ -66,12 +67,17 @@ class EventoInvalido(ValueError):
 def build_mobile_export() -> dict:
     """Genera el paquete JSON que el celular importa (solo prospectos fuera de cuarentena)."""
     negocios = db.get_all_negocios(sort_col="puntuacion", sort_dir="desc")
+    indice = validacion.indice_claves(negocios)
     prospectos = []
     for n in negocios:
         item = {}
         for field in EXPORT_FIELDS:
             val = n.get(field)
             item[field] = "" if val is None else val
+        ident = validacion.analizar_identidad(n, indice=indice)
+        item["revision_identidad"] = ident["hallazgos"]
+        item["identidad_requiere_revision"] = ident["requiere_revision"]
+        item["firma_identidad"] = ident["firma"]
         prospectos.append(item)
 
     with db.get_db() as conn:
@@ -278,6 +284,11 @@ def _apply_nuevo_prospecto(uid: str, datos: dict, fecha: str) -> dict:
             conn, nuevo_id, nombre, record["telefono"], record["whatsapp"]
         )
         conn.commit()
+
+    # La persona confirmó en el celular que los datos son de este negocio (revisión de identidad).
+    firma = _text(datos.get("identidad_revisada_firma"), 16, "identidad_revisada_firma")
+    if re.match(r"^[0-9a-f]{8}$", firma):
+        db.record_identity_review(nuevo_id, firma, nota="Confirmado al darlo de alta en el celular", origen="movil", fecha=fecha)
     return {"negocio_id": nuevo_id, "ya_existia": False, "duplicados": duplicados}
 
 
@@ -360,6 +371,31 @@ def _apply_whatsapp_abierto(negocio_id: int, datos: dict, fecha: str, evento_uui
     db.register_whatsapp_open(negocio_id, tel, mensaje, origen="movil", fecha=fecha, evento_uuid=evento_uuid)
 
 
+def _apply_revision_identidad(negocio_id: int, datos: dict, fecha: str):
+    """Revisión humana hecha en el celular: confirma los datos que vio o corrige nombre/giro."""
+    decision = _text(datos.get("decision"), 20, "decision")
+    nota = _text(datos.get("nota"), MAX_TEXT, "nota")
+    if decision not in ("confirmar", "corregir"):
+        raise EventoInvalido("Decisión de revisión inválida.")
+    if decision == "corregir":
+        cambios = {"id": negocio_id}
+        nombre = _text(datos.get("nombre"), 200, "nombre")
+        sector = _text(datos.get("sector"), 120, "sector")
+        if nombre:
+            cambios["nombre"] = nombre
+        if sector:
+            cambios["sector"] = sector
+        if len(cambios) == 1:
+            raise EventoInvalido("La corrección no trae nombre ni giro.")
+        db.save_or_update_negocio(cambios)
+    detalle = db.get_negocio_detail(negocio_id)
+    firma_actual = validacion.firma_identidad(detalle)
+    firma_vista = _text(datos.get("firma_vista"), 16, "firma_vista")
+    if decision == "confirmar" and firma_vista and firma_vista != firma_actual:
+        raise EventoInvalido("Los datos del prospecto cambiaron en la PC después de exportarlos; vuelve a revisarlo con el archivo nuevo.")
+    db.record_identity_review(negocio_id, firma_actual, nota=nota, origen="movil", fecha=fecha)
+
+
 def _record_result(evento_uuid, tipo, uid, negocio_id, resultado, motivo, evento, fecha):
     with db.get_db() as conn:
         conn.execute("""
@@ -440,6 +476,8 @@ def apply_mobile_events(payload: dict) -> dict:
                     _apply_nota(negocio_id, datos, fecha)
                 elif tipo == "whatsapp_abierto":
                     _apply_whatsapp_abierto(negocio_id, datos, fecha, evento_uuid)
+                elif tipo == "revision_identidad":
+                    _apply_revision_identidad(negocio_id, datos, fecha)
                 elif tipo == "regresar_pendientes":
                     db.return_to_pending(negocio_id, origen="movil", fecha=fecha, evento_uuid=evento_uuid)
 

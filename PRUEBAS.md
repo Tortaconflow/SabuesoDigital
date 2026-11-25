@@ -36,3 +36,25 @@ Para re-ejecutar toda la suite en cualquier momento:
 cd C:\Users\user\.gemini\antigravity\scratch\prospector
 pytest -v tests/test_acceptance.py
 ```
+
+---
+
+## Actualización 2026-11-25 — rama `feat/aprendizaje-errores`
+
+Resultado: **124 pruebas recolectadas — 119 pasan, 4 en fallo esperado (xfail estricto, Fases 2 y 3), 1 solo en Windows** (`tests/test_real_launch.py`, usa `netstat`/`findstr`).
+
+| Archivo | Pruebas | Qué cubre |
+| :--- | ---: | :--- |
+| `tests/test_acceptance.py` | 21 | Criterios originales de la misión |
+| `tests/test_whatsapp_first.py` | 16 | Canales WhatsApp-first y copiloto |
+| `tests/test_movil_sync.py` | 13 | Sincronización PC ⇄ celular |
+| `tests/test_contact_flow.py` | 18 | Pendientes / Abiertos / Contactados y números repetidos |
+| `tests/test_aprendizaje_aceptacion.py` | 13 | Los 7 errores reales (9 corregidos + 4 xfail) |
+| `tests/test_reglas_validacion.py` | 41 | Reglas extensibles, identidad, revisión de borradores, API y sincronización |
+| `tests/test_paridad_motor.py` | 1 | Python y `docs/motor.js` dan resultados idénticos (requiere Node; si no hay, se omite) |
+| `tests/test_real_launch.py` | 1 | Arranque real en Windows |
+
+```powershell
+pytest -q                       # todo (en Windows incluye el arranque real)
+pytest -q tests/test_aprendizaje_aceptacion.py -rx   # los errores reales y su estado
+```

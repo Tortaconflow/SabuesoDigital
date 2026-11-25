@@ -1,5 +1,23 @@
 # Registro de Cambios: Sabueso Digital 2.0 (CÍDIKS Sales Engine)
 
+## [2.2.0] - 2026-11-25 — Aprendizaje basado en errores reales (Fases 0 y 1)
+
+Rama `feat/aprendizaje-errores` (sin fusionar). Detalle de cada error, causa raíz y antes/después en `APRENDIZAJE_ERRORES.md`.
+
+### Fase 0 — Reglas compartidas
+- `docs/reglas/sabueso_reglas.json`: giros comerciales extensibles (agregar un giro sin tocar el núcleo), servicios CÍDIKS integrales (web, marketing, CRM, automatizaciones, IA, consultoría), umbrales del primer mensaje (objetivo 80–180, aviso desde 200, una pregunta), frases genéricas, directorios y modalidades.
+- `reglas.py` (carga y validación con mensajes claros) y `docs/motor.js` (misma lógica para el celular). `tests/test_paridad_motor.py` verifica que Python y JavaScript den resultados idénticos.
+
+### Fase 1 — Identidad y calidad del mensaje
+- `validacion.py`: discrepancias de nombre/dominio, directorio, contacto compartido y giro → revisión humana (no invalidación); revisor de borradores con bloqueos, revisiones y avisos.
+- `copilot.py` reescrito sobre las reglas: giro del negocio, necesidad confirmada primero, mensajes cortos con una pregunta, sin ubicaciones inventadas, 0 tokens.
+- PC: recuadro de revisión de identidad (confirmar/corregir, auditado), revisión del borrador en vivo, envío en pausa hasta aprobación humana cuando hay observaciones, servicios nuevos en el selector, marca «Revisar identidad» en la tabla.
+- Sabueso Móvil 1.2.0: mismo motor y reglas sin internet, tarjeta de revisión de identidad, revisión del borrador, botón para regenerar borradores viejos, alta manual con el copiloto nuevo. Nuevo evento sincronizado `revision_identidad`.
+- Base de datos (aditivo): `negocios.identidad_revisada_firma`, `identidad_revisada_en`, `identidad_revision_nota`.
+
+### Pruebas
+- 124 recolectadas: 119 pasan, 4 en fallo esperado (Fases 2 y 3), 1 solo Windows (`test_real_launch.py`).
+
 ## [2.1.1] - 2026-11-25 — Prospectos repetidos y bandeja «Abiertos»
 
 ### Corregido

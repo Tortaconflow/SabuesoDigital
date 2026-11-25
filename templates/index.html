@@ -469,10 +469,15 @@
                         <div style="display: flex; gap: 6px;">
                             <select id="edit-servicio-sugerido" style="flex: 1; font-size: 12px;">
                                 <option value="catalogos">Catálogos digitales para WhatsApp</option>
-                                <option value="web">Presencia web con reserva directa</option>
+                                <option value="web">Desarrollo web conectado a WhatsApp</option>
                                 <option value="flyers">Flyers y promociones de temporada</option>
                                 <option value="redes_sociales">Contenido digital y redes sociales</option>
                                 <option value="diseno">Diseño gráfico comercial</option>
+                                <option value="marketing">Marketing digital</option>
+                                <option value="crm">CRM y seguimiento de clientes</option>
+                                <option value="automatizacion">Automatizaciones</option>
+                                <option value="ia">Inteligencia artificial aplicada</option>
+                                <option value="consultoria">Consultoría en digitalización</option>
                                 <option value="investigar_mas">🔍 Investigar más antes de contactar</option>
                                 <option value="no_contactar">⛔ No contactar todavía (Sin verificar)</option>
                             </select>
@@ -481,6 +486,26 @@
                             </button>
                         </div>
                     </div>
+
+                    <!-- Revisión humana de identidad (Fase 1 aprendizaje) -->
+                    <div id="identity-review-box" style="display: none; background: rgba(245, 158, 11, 0.10); border: 1px solid rgba(245, 158, 11, 0.45); padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 10px;">
+                        <div style="font-weight: 600; margin-bottom: 6px;"><i class="fa-solid fa-user-shield"></i> Revisión humana de identidad</div>
+                        <ul id="identity-review-list" style="margin: 0 0 8px 16px; padding: 0;"></ul>
+                        <div id="identity-review-actions">
+                            <input type="text" id="identity-review-note" placeholder="Nota (opcional): cómo lo comprobaste" style="width: 100%; margin-bottom: 6px; font-size: 12px;">
+                            <button type="button" class="btn btn-secondary" id="btn-identity-confirm" style="font-size: 11px;">
+                                <i class="fa-solid fa-check"></i> Sí, es este negocio: confirmar
+                            </button>
+                            <details style="margin-top: 6px;">
+                                <summary style="cursor: pointer;">Corregir nombre o giro</summary>
+                                <input type="text" id="identity-fix-name" placeholder="Nombre correcto" style="width: 100%; margin: 6px 0; font-size: 12px;">
+                                <input type="text" id="identity-fix-sector" placeholder="Giro correcto (ej. Mobiliario y decoración)" list="identity-sector-options" style="width: 100%; margin-bottom: 6px; font-size: 12px;">
+                                <datalist id="identity-sector-options"></datalist>
+                                <button type="button" class="btn btn-secondary" id="btn-identity-fix" style="font-size: 11px;">Guardar corrección</button>
+                            </details>
+                        </div>
+                    </div>
+                    <div id="identity-review-ok" style="display: none; font-size: 11px; color: #10b981; margin-bottom: 8px;"></div>
 
                     <!-- Mensajes CÍDIKS -->
                     <div class="form-group">
@@ -491,6 +516,7 @@
                             <button type="button" class="msg-tab" id="tab-seg" onclick="selectMsgTab('seg')">Seguimiento</button>
                         </div>
                         <textarea id="edit-message" rows="6"></textarea>
+                        <div id="msg-review-box" style="font-size: 11px; margin-top: 6px; color: var(--text-muted);"></div>
                         <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; cursor: pointer; color: var(--text-main);">
                             <input type="checkbox" id="edit-msg-approved" style="width: 16px; height: 16px;">
                             <span><i class="fa-solid fa-user-check" style="color: #10b981;"></i> Mensaje revisado y aprobado por humano (no contar borradores automáticos)</span>

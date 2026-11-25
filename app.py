@@ -31,6 +31,8 @@ import copilot
 import importer
 import movil_sync
 import contact_identity
+import validacion
+import reglas
 
 # Configuración de codificación y registro en log
 try:
@@ -703,6 +705,7 @@ def api_prospects_get():
     # Bandejas Pendientes/Abiertos/Contactados y duplicados por número (sobre todos los activos)
     activos = negocios if not (status or priority or search or include_quarantine or only_quarantine) else db.get_all_negocios()
     anotaciones = contact_identity.anotar_bandejas(activos)
+    indice_numeros = validacion.indice_claves(activos)
 
     # Format into frontend-friendly response with normalized and display fields
     formatted = []
@@ -783,6 +786,7 @@ def api_prospects_get():
             "bandeja_contacto": n.get("bandeja_contacto") or "pendiente",
             "intentos_whatsapp": n.get("intentos_whatsapp") or 0,
             "ultimo_intento_whatsapp": n.get("ultimo_intento_whatsapp") or "",
+            "identidad_requiere_revision": validacion.analizar_identidad(n, indice=indice_numeros)["requiere_revision"],
             **anot
         })
 
@@ -797,10 +801,81 @@ def api_prospect_detail(negocio_id):
 
 
 def _with_contact_tray(detail: dict) -> dict:
-    anotaciones = contact_identity.anotar_bandejas(db.get_all_negocios())
+    todos = db.get_all_negocios()
+    anotaciones = contact_identity.anotar_bandejas(todos)
     detail.update(anotaciones.get(detail["id"]) or contact_identity.anotar_bandejas([detail])[detail["id"]])
     detail["intentos_contacto"] = db.get_contact_attempts(detail["id"])
+    detail["revision_identidad"] = validacion.analizar_identidad(detail, contexto=todos)
     return detail
+
+
+@app.route("/api/reglas/sectores", methods=["GET"])
+def api_reglas_sectores():
+    r = reglas.cargar_reglas()
+    return jsonify([{"id": x["id"], "nombre": x["nombre"]} for x in r["sectores"]])
+
+
+@app.route("/api/mensajes/revisar", methods=["POST"])
+def api_revisar_mensaje():
+    """Revisión determinista de un borrador (0 tokens). No envía nada: solo informa o bloquea."""
+    body = request.json or {}
+    try:
+        negocio_id = int(body.get("id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "ID de prospecto requerido"}), 400
+    detail = db.get_negocio_detail(negocio_id)
+    if not detail:
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    texto = str(body.get("texto") or "")[:5000]
+    tipo = "seguimiento" if body.get("tipo") == "seguimiento" else "inicial"
+    return jsonify(validacion.revisar_mensaje(texto, detail, contexto=db.get_all_negocios(), tipo=tipo))
+
+
+@app.route("/api/prospects/identity-review", methods=["POST"])
+def api_identity_review():
+    """
+    Revisión humana de identidad: «confirmar» los datos actuales o «corregir» nombre/giro.
+    Después se regeneran los borradores con los datos revisados. Nunca envía mensajes.
+    """
+    body = request.json or {}
+    try:
+        negocio_id = int(body.get("id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "ID de prospecto requerido"}), 400
+    decision = body.get("decision")
+    if decision not in ("confirmar", "corregir"):
+        return jsonify({"error": "Decisión inválida: usa «confirmar» o «corregir»."}), 400
+    detail = db.get_negocio_detail(negocio_id)
+    if not detail:
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    nota = str(body.get("nota") or "").strip()[:2000]
+    if decision == "corregir":
+        cambios = {"id": negocio_id}
+        nombre = str(body.get("nombre") or "").strip()[:200]
+        sector = str(body.get("sector") or "").strip()[:120]
+        if nombre:
+            cambios["nombre"] = nombre
+        if sector:
+            cambios["sector"] = sector
+        if len(cambios) == 1:
+            return jsonify({"error": "Indica el nombre o el giro correcto."}), 400
+        db.save_or_update_negocio(cambios)
+        detail = db.get_negocio_detail(negocio_id)
+    db.record_identity_review(negocio_id, validacion.firma_identidad(detail), nota=nota, origen="pc")
+    detail = db.get_negocio_detail(negocio_id)
+    res = copilot.generate_cidiks_messages(detail, evidencias=detail.get("evidencias", []), contexto=db.get_all_negocios())
+    db.save_or_update_negocio({
+        "id": negocio_id,
+        "servicio_sugerido": res["servicio_sugerido"],
+        "observacion_verificada": res["observacion_verificada"],
+        "hipotesis_comercial": res["hipotesis_comercial"],
+        "pregunta_comercial": res["pregunta_comercial"],
+        "mensaje_personalizado": res["mensaje_personalizado"],
+        "mensaje_calido": res["mensaje_calido"],
+        "mensaje_seguimiento": res["mensaje_seguimiento"],
+        "mensaje_aprobado": 0,
+    })
+    return jsonify({"success": True, "prospecto": _with_contact_tray(db.get_negocio_detail(negocio_id)), "copilot": res})
 
 
 def _is_outreach_blocked(detail: dict) -> bool:
@@ -964,7 +1039,7 @@ def api_search():
         copilot_res = copilot.generate_cidiks_messages(
             prospect=b,
             evidencias=[],
-            use_ai=False
+            contexto=existing_negocios + saved_prospects
         )
         b["mensaje_personalizado"] = copilot_res.get("mensaje_personalizado", "")
         b["mensaje_calido"] = copilot_res.get("mensaje_calido", "")
@@ -1017,11 +1092,19 @@ def api_audit():
 
     # Generar mensajes con Copiloto ético CÍDIKS
     evidencias = prospect.get("evidencias", [])
+    datos_generacion = site_data | {
+        "id": negocio_id,
+        "nombre": name,
+        "web": url,
+        "sector": category or prospect.get("sector", ""),
+        "municipio": location or prospect.get("municipio", ""),
+        "identidad_revisada_firma": prospect.get("identidad_revisada_firma") or "",
+        "necesidad_expresada": prospect.get("necesidad_expresada") or "",
+    }
     copilot_res = copilot.generate_cidiks_messages(
-        prospect=site_data | {"nombre": name, "sector": category or prospect.get("sector", ""), "municipio": location or prospect.get("municipio", "")},
+        prospect=datos_generacion,
         evidencias=evidencias,
-        use_ai=bool(CONFIG.get("gemini_api_key")),
-        api_key=CONFIG.get("gemini_api_key")
+        contexto=db.get_all_negocios()
     )
 
     # Calcular score y prioridad técnica
@@ -1159,8 +1242,7 @@ def api_copilot_regenerate():
     copilot_res = copilot.generate_cidiks_messages(
         prospect=prospect,
         evidencias=prospect.get("evidencias", []),
-        use_ai=bool(body.get("use_ai", False)),
-        api_key=CONFIG.get("gemini_api_key")
+        contexto=db.get_all_negocios()
     )
 
     updated = db.save_or_update_negocio({

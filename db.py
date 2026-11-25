@@ -173,6 +173,11 @@ def init_db(target_path: Path = None):
         _ensure_column(cursor, "negocios", "pregunta_comercial", "TEXT DEFAULT ''")
         _ensure_column(cursor, "negocios", "identidad_verificada", "INTEGER DEFAULT 1")
 
+        # Revisión humana de identidad (Fase 1 aprendizaje): huella de los datos confirmados por la persona.
+        _ensure_column(cursor, "negocios", "identidad_revisada_firma", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "identidad_revisada_en", "TEXT DEFAULT ''")
+        _ensure_column(cursor, "negocios", "identidad_revision_nota", "TEXT DEFAULT ''")
+
         # Bandejas de contacto: «abierto» = se abrió WhatsApp, sin confirmar envío.
         _ensure_column(cursor, "negocios", "bandeja_contacto", "TEXT DEFAULT 'pendiente'")
         cursor.execute("""
@@ -1494,3 +1499,33 @@ def get_contact_attempts(negocio_id) -> list:
             (negocio_id,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# =========================================================
+# REVISIÓN HUMANA DE IDENTIDAD (Fase 1 — aprendizaje basado en errores)
+# =========================================================
+
+def record_identity_review(negocio_id, firma, nota="", origen="pc", fecha=None):
+    """Guarda que una persona revisó (y confirmó o corrigió) la identidad del prospecto."""
+    cuando = (fecha or "").strip() or datetime.now().isoformat(timespec="seconds")
+    with get_db() as conn:
+        cursor = conn.cursor()
+        prev = cursor.execute(
+            "SELECT identidad_revisada_firma, identidad_revisada_en, identidad_revision_nota FROM negocios WHERE id = ?",
+            (negocio_id,)
+        ).fetchone()
+        if not prev:
+            raise ValueError(f"Prospecto con ID {negocio_id} no encontrado.")
+        cursor.execute("""
+            UPDATE negocios SET identidad_revisada_firma = ?, identidad_revisada_en = ?, identidad_revision_nota = ?,
+                   updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (firma, cuando, (nota or "")[:2000], negocio_id))
+        cursor.execute("""
+            INSERT INTO auditoria_cambios_datos (
+                tabla_afectada, registro_id, negocio_id, operacion, valores_anteriores_json, valores_nuevos_json, motivo
+            ) VALUES ('negocios', ?, ?, 'REVISION_HUMANA_IDENTIDAD', ?, ?, ?)
+        """, (negocio_id, negocio_id, json.dumps(dict(prev), ensure_ascii=False),
+              json.dumps({"identidad_revisada_firma": firma, "identidad_revisada_en": cuando, "origen": origen}, ensure_ascii=False),
+              f"Revisión humana de identidad ({origen})"))
+        conn.commit()
