@@ -15,9 +15,11 @@ La versión de bolsillo (docs/motor.js) replica estas reglas; la prueba de parid
 import re
 from datetime import date, timedelta
 
+import qr_local
 import reglas as R
 
-TIPOS_EXCLUYENTES = ("servicio_rechazado", "servicio_conservado")
+# canal_existente: lo que un QR recibido demuestra que el negocio ya tiene (Fase 3).
+TIPOS_EXCLUYENTES = ("servicio_rechazado", "servicio_conservado", "canal_existente")
 _RE_CLAUSULAS = re.compile(r"[.;!?\n]+")
 _RE_CORREO = re.compile(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+")
 _RE_TELEFONO = re.compile(r"\+?\d[\d\s().-]{7,}\d")
@@ -107,6 +109,7 @@ def memoria_efectiva(p: dict, r=None) -> dict:
     guardada = [m for m in (p.get("memoria") or []) if int(1 if m.get("vigente") is None else m.get("vigente")) == 1]
     claves = {(m.get("tipo"), m.get("servicio") or "") for m in guardada}
     derivada = [m for m in extraer_memoria(p.get("respuesta") or "", r) if (m["tipo"], m["servicio"]) not in claves]
+    derivada += [m for m in qr_local.memoria_qr(p, r) if (m["tipo"], m["servicio"]) not in claves]
     jerarquia = r["memoria"]["jerarquia_fuentes"]
     rango = lambda m: jerarquia.index(m.get("fuente")) if m.get("fuente") in jerarquia else len(jerarquia)
     todas = sorted(guardada + derivada, key=rango)

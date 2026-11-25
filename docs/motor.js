@@ -446,7 +446,7 @@
     }
 
     // ------------------------------------------------------------ conversacion.py (Fase 2)
-    const TIPOS_EXCLUYENTES = ["servicio_rechazado", "servicio_conservado"];
+    const TIPOS_EXCLUYENTES = ["servicio_rechazado", "servicio_conservado", "canal_existente"];
     const tienePropia = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
     function redactar(texto, limite = 1000) {
         let t = String(texto ?? "").replace(/[A-Za-z0-9_.+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+/g, "[correo]");
@@ -505,7 +505,7 @@
     function memoriaEfectiva(p, r) {
         const guardada = (p.memoria || []).filter((m) => Number(m.vigente ?? 1) === 1);
         const claves = new Set(guardada.map((m) => JSON.stringify([m.tipo, m.servicio || ""])));
-        const derivada = extraerMemoria(p.respuesta || "", r).filter((m) => !claves.has(JSON.stringify([m.tipo, m.servicio])));
+        const derivada = extraerMemoria(p.respuesta || "", r).concat(memoriaQr(p, r)).filter((m) => !claves.has(JSON.stringify([m.tipo, m.servicio])));
         const jer = r.memoria.jerarquia_fuentes;
         const rango = (m) => { const i = jer.indexOf(m.fuente); return i >= 0 ? i : jer.length; };
         const todas = guardada.concat(derivada).map((m, i) => [m, i]).sort((a, b) => (rango(a[0]) - rango(b[0])) || (a[1] - b[1])).map((x) => x[0]);
@@ -667,6 +667,7 @@
         else if (!wa) parts.push("únicamente dispone de formulario web general");
         const verificadas = (evidencias || []).filter((ev) => ev.estado_comprobacion === "VERIFICADA_VISIBLE");
         if (verificadas.length && verificadas[0].elemento_observado) parts.push(`evidencia visual comprobada: ${verificadas[0].elemento_observado}`);
+        parts.push(...observacionesQr(p, r));
         const obs = parts.join("; ");
         return obs[0].toUpperCase() + obs.slice(1) + ".";
     }
@@ -846,6 +847,146 @@
         });
     }
 
+    // ------------------------------------------------------------------ Fase 3: QR local (qr_local.py)
+    const RE_URL = /^([a-z][a-z0-9+.\-]*):(\/\/)?([^/?#\s]*)([^?#\s]*)/i;
+    const RE_DOMINIO = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+    const RE_SSID = /(?:^|;)S:((?:\\.|[^;])*)/;
+    function partesUrl(t) {
+        const m = RE_URL.exec(t);
+        if (!m) return null;
+        let host = m[3].toLowerCase().split("@").pop().split(":")[0];
+        if (host.startsWith("www.")) host = host.slice(4);
+        return [m[1].toLowerCase(), host, m[4].toLowerCase()];
+    }
+    function coincideQr(host, ruta, patron) {
+        const i = patron.indexOf("/");
+        const dom = i < 0 ? patron : patron.slice(0, i), pref = i < 0 ? "" : patron.slice(i);
+        return (host === dom || host.endsWith("." + dom)) && ruta.startsWith(pref);
+    }
+    function interpretarQr(texto, r) {
+        const q = r.qr;
+        const t = String(texto ?? "").trim().slice(0, 2000);
+        if (!t) return null;
+        let tipo = "texto", dominio = "", vista = t.slice(0, 300);
+        const mayus = t.toUpperCase();
+        for (const [tid, cfg] of Object.entries(q.tipos)) {
+            if ((cfg.prefijos || []).some((p) => mayus.startsWith(p.toUpperCase()))) { tipo = tid; break; }
+        }
+        if (tipo === "wifi") {
+            const m = RE_SSID.exec(t.slice(5));
+            vista = `Red Wi-Fi «${m ? m[1] : "sin nombre"}» (la contraseña no se muestra ni se guarda)`;
+        } else if (tipo === "contacto") {
+            vista = "Tarjeta de contacto (sus datos no se guardan)";
+        } else {
+            const partes = partesUrl(t);
+            if (partes) {
+                const [esquema, host, ruta] = partes;
+                const web = (esquema === "http" || esquema === "https") && !!host;
+                for (const tid of q.orden) {
+                    const cfg = q.tipos[tid];
+                    if ((cfg.esquemas || []).includes(esquema) || (web && (cfg.patrones || []).some((p) => coincideQr(host, ruta, p)))) { tipo = tid; break; }
+                }
+                if (tipo === "texto" && web) {
+                    const palabras = new Set((host + " " + ruta).split(/[^a-z0-9]+/).filter(Boolean));
+                    tipo = q.orden.find((tid) => (q.tipos[tid].palabras || []).some((w) => palabras.has(w))) || "enlace";
+                }
+                if (tipo !== "texto") {
+                    dominio = RE_DOMINIO.test(host) ? host : "";
+                    if (web) vista = `${esquema}://${host}${ruta}`.slice(0, 300);
+                }
+            }
+        }
+        const cfg = q.tipos[tipo];
+        if (!cfg.guardar_dominio) dominio = "";
+        const observacion = cfg.observacion ? rellenar(cfg.observacion, { dominio: dominio || "un sitio" }) : "";
+        return {
+            tipo, nombre: cfg.nombre, dominio, observacion, servicio_existente: cfg.servicio_existente, vista,
+            guardable: !!cfg.guardar, entrada: cfg.guardar ? { tipo, dominio } : null
+        };
+    }
+    function sanearQr(entrada, r) {
+        if (!entrada || typeof entrada !== "object" || Array.isArray(entrada)) return null;
+        const tipo = String(entrada.tipo || "");
+        const cfg = tienePropia(r.qr.tipos, tipo) ? r.qr.tipos[tipo] : null;
+        if (!cfg || !cfg.guardar) return null;
+        let dominio = String(entrada.dominio || "").trim().toLowerCase().slice(0, 253);
+        if (!cfg.guardar_dominio || !RE_DOMINIO.test(dominio)) dominio = "";
+        return { tipo, dominio };
+    }
+    function listaQr(p, r) {
+        let crudo = p.qr_recibidos || [];
+        if (typeof crudo === "string") { try { crudo = JSON.parse(crudo); } catch { crudo = []; } }
+        const vistos = new Set(), salida = [];
+        for (const e of Array.isArray(crudo) ? crudo : []) {
+            const x = sanearQr(e, r);
+            const k = x ? `${x.tipo}|${x.dominio}` : "";
+            if (x && !vistos.has(k)) { vistos.add(k); salida.push(x); }
+        }
+        return salida;
+    }
+    function observacionesQr(p, r) {
+        const salida = [];
+        for (const e of listaQr(p, r)) {
+            const cfg = r.qr.tipos[e.tipo];
+            if (!cfg.observacion) continue;
+            let obs = rellenar(cfg.observacion, { dominio: e.dominio || "un sitio" });
+            if (e.dominio && !cfg.observacion.includes("{dominio}")) obs += ` (QR: ${e.dominio})`;
+            if (!salida.includes(obs)) salida.push(obs);
+        }
+        return salida;
+    }
+    function memoriaQr(p, r) {
+        return listaQr(p, r).filter((e) => r.qr.tipos[e.tipo].servicio_existente).map((e) => ({
+            tipo: "canal_existente", servicio: r.qr.tipos[e.tipo].servicio_existente,
+            texto: rellenar(r.qr.tipos[e.tipo].observacion, { dominio: e.dominio || "un sitio" }), fuente: "qr"
+        }));
+    }
+
+    // ------------------------------------------------------------------ Fase 4: aprendizaje (aprendizaje.py)
+    const PLANTILLAS = ["mensaje_personalizado", "mensaje_calido", "mensaje_seguimiento"];
+    const normEspacios = (t) => String(t ?? "").split(/\s+/).filter(Boolean).join(" ");
+    function huellaEnvio(mensaje, p, plantilla, r) {
+        const m = normEspacios(mensaje);
+        const coincide = PLANTILLAS.find((k) => m && normEspacios(p[k]) === m) || "";
+        let editado;
+        if (coincide) { plantilla = coincide; editado = false; }
+        else { plantilla = PLANTILLAS.includes(plantilla) ? plantilla : (m ? "mensaje_personalizado" : "sin_mensaje"); editado = !!m; }
+        const relacion = (p.tipo_relacion || "") === "educativa" ? "educativa" : "comercial";
+        const met = metricas(mensaje);
+        return { plantilla, estrategia: `${relacion}|${plantilla}|${p.servicio_sugerido || "general"}`,
+                 caracteres: met.caracteres, preguntas: met.preguntas, editado };
+    }
+    function resultadoEnvio(clasificaciones, r) {
+        const cats = r.respuestas.categorias;
+        const infos = (clasificaciones || []).filter((c) => tienePropia(cats, c)).map((c) => cats[c]);
+        if (infos.some((i) => i.oportunidad_comercial)) return "interes";
+        if (infos.some((i) => i.cierra_prospeccion)) return "rechazo";
+        if (infos.some((i) => i.conversacion === "educativa")) return "educativa";
+        if (infos.some((i) => i.cuenta_como_respuesta)) return "respuesta";
+        return "sin_respuesta";
+    }
+    function compararEstrategias(envios, r) {
+        const minimo = r.aprendizaje.muestra_minima, validos = r.aprendizaje.resultados;
+        const grupos = {};
+        for (const e of envios || []) {
+            const k = e.estrategia || "sin_huella";
+            if (!tienePropia(grupos, k)) { grupos[k] = { enviados: 0 }; validos.forEach((v) => { grupos[k][v] = 0; }); }
+            const g = grupos[k];
+            g.enviados += 1;
+            g[validos.includes(e.resultado) ? e.resultado : "sin_respuesta"] += 1;
+        }
+        return Object.keys(grupos).sort().map((est) => {
+            const g = grupos[est];
+            const humanas = g.interes + g.rechazo + g.educativa + g.respuesta;
+            const suficiente = g.enviados >= minimo;
+            return {
+                estrategia: est, enviados: g.enviados, respuestas_humanas: humanas, interes: g.interes, rechazos: g.rechazo,
+                educativas: g.educativa, tasa_respuesta: Math.floor(humanas * 100 / g.enviados), muestra_suficiente: suficiente,
+                aviso: suficiente ? "" : `Muestra chica (${g.enviados} de ${minimo} envíos mínimos): todavía no saques conclusiones.`
+            };
+        });
+    }
+
     return {
         normalizar, textoComparable, contieneFrase, tokens, fnv1a,
         normalizarTelefono, clavesContacto, paisDelProspecto,
@@ -853,6 +994,8 @@
         dominioDe, compararNombreDominio, firmaIdentidad, indiceClaves, analizarIdentidad, revisarMensaje,
         generarMensajes,
         redactar, clasificarRespuesta, infoCategoria, extraerMemoria, memoriaEfectiva, ultimaClasificacion,
-        estadoProspeccion, estadoSeguimiento, recursosSugeridos, respuestaSugerida, analizarRespuesta
+        estadoProspeccion, estadoSeguimiento, recursosSugeridos, respuestaSugerida, analizarRespuesta,
+        interpretarQr, sanearQr, listaQr, observacionesQr, memoriaQr,
+        huellaEnvio, resultadoEnvio, compararEstrategias
     };
 }));

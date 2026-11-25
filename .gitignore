@@ -42,3 +42,7 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 scratch/
+
+# Clave local de seudónimos (Fase 4): nunca se sube
+clave_seudonimos.key
+*.key

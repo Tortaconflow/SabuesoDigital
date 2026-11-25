@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import contextlib
 import hashlib
@@ -213,6 +214,49 @@ def init_db(target_path: Path = None):
                 interaccion_id INTEGER,
                 origen TEXT DEFAULT 'pc',
                 FOREIGN KEY (negocio_id) REFERENCES negocios(id) ON DELETE CASCADE
+            );
+        """)
+
+        # Fase 3: QR recibidos (solo tipo y dominio; nunca contraseñas ni datos de tarjetas de contacto)
+        _ensure_column(cursor, "negocios", "qr_recibidos", "TEXT DEFAULT '[]'")
+        # Fase 4: registro seudonimizado de errores/correcciones, huella de envíos y consumo de IA (siempre 0)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS aprendizaje_registro (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha TEXT NOT NULL,
+                tipo TEXT NOT NULL,          -- clasificacion_corregida, dato_incorrecto, identidad_corregida, mensaje_editado, revision_aprobada
+                seudonimo TEXT NOT NULL,     -- HMAC-SHA256 con clave local (seudonimización, no anonimización)
+                sector TEXT DEFAULT '',
+                codigo TEXT DEFAULT '',
+                sugerido TEXT DEFAULT '',
+                corregido TEXT DEFAULT '',
+                detalle TEXT DEFAULT '',     -- sin correos, teléfonos, enlaces, nombre ni dominio del negocio
+                origen TEXT DEFAULT 'pc'
+            );
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS envios_huella (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                negocio_id INTEGER NOT NULL,  -- solo para unir con sus respuestas; nunca se exporta
+                seudonimo TEXT NOT NULL,
+                fecha TEXT NOT NULL,
+                canal TEXT DEFAULT '',
+                plantilla TEXT DEFAULT '',
+                estrategia TEXT DEFAULT '',
+                caracteres INTEGER DEFAULT 0,
+                preguntas INTEGER DEFAULT 0,
+                editado INTEGER DEFAULT 0,
+                codigos_revision TEXT DEFAULT '[]',
+                origen TEXT DEFAULT 'pc',
+                FOREIGN KEY (negocio_id) REFERENCES negocios(id) ON DELETE CASCADE
+            );
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS consumo_ia (
+                funcion TEXT PRIMARY KEY,
+                llamadas INTEGER DEFAULT 0,
+                tokens INTEGER DEFAULT 0,
+                actualizado TEXT DEFAULT ''
             );
         """)
 
@@ -1102,7 +1146,7 @@ def update_evidencia_estado(evidencia_id, nuevo_estado, revision_humana=1):
         conn.commit()
 
 
-def record_human_contact(negocio_id, canal, notas="", fecha_contacto=None):
+def record_human_contact(negocio_id, canal, notas="", fecha_contacto=None, origen="pc", huella=None):
     """
     Registra contacto manual únicamente tras confirmación humana explícita, conservando fecha real y bitácora.
     Si el prospecto está bloqueado como NO_CONTACTAR o INVESTIGAR_MAS, se exige una nota de justificación
@@ -1126,6 +1170,11 @@ def record_human_contact(negocio_id, canal, notas="", fecha_contacto=None):
                 )
 
         prev_estado = n_prev["estado_comercial"] if n_prev else "investigado"
+        # Fase 4: huella del envío con los borradores tal como estaban al enviarlo
+        try:
+            _registrar_huella(cursor, negocio_id, canal, effective_date, origen, huella)
+        except Exception as exc:  # el aprendizaje nunca impide registrar un contacto real
+            logging.getLogger(__name__).warning("No se pudo registrar la huella del envío: %s", exc)
 
         cursor.execute("SELECT id, primer_contacto_fecha, fecha_contacto_confirmada, canal, notas FROM actividad_comercial WHERE negocio_id = ?", (negocio_id,))
         a_prev = cursor.fetchone()
@@ -1178,6 +1227,141 @@ def record_human_contact(negocio_id, canal, notas="", fecha_contacto=None):
             f"Confirmación humana de envío por {canal} ({effective_date})"
         ))
         conn.commit()
+
+
+# =========================================================
+# FASE 3 Y 4: QR RECIBIDOS, APRENDIZAJE SEUDONIMIZADO Y CONSUMO DE IA
+# =========================================================
+def _datos_anonimizar(cur, negocio_id):
+    n = cur.execute("SELECT nombre, web, sector FROM negocios WHERE id = ?", (negocio_id,)).fetchone()
+    if not n:
+        return [], [], ""
+    import copilot
+    nombres = [n["nombre"] or "", copilot.clean_business_name(n["nombre"] or "")]
+    dominio = copilot.extract_domain_clean(n["web"] or "")
+    return nombres, [dominio], n["sector"] or ""
+
+
+def _registrar_aprendizaje(cur, tipo, negocio_id, codigo="", sugerido="", corregido="", detalle="", origen="pc", fecha=None):
+    """Registro de errores y correcciones SIN datos personales: seudónimo y texto anonimizado."""
+    import aprendizaje
+    nombres, dominios, sector = _datos_anonimizar(cur, negocio_id)
+    cur.execute("""
+        INSERT INTO aprendizaje_registro (fecha, tipo, seudonimo, sector, codigo, sugerido, corregido, detalle, origen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, ((fecha or "").strip() or datetime.now().isoformat(timespec="seconds"), tipo, aprendizaje.seudonimo(negocio_id),
+          sector[:120], str(codigo)[:200], aprendizaje.anonimizar(sugerido, nombres, dominios, 120),
+          aprendizaje.anonimizar(corregido, nombres, dominios, 120), aprendizaje.anonimizar(detalle, nombres, dominios), origen))
+
+
+def registrar_aprendizaje(tipo, negocio_id, codigo="", sugerido="", corregido="", detalle="", origen="pc", fecha=None):
+    with get_db() as conn:
+        _registrar_aprendizaje(conn.cursor(), tipo, negocio_id, codigo, sugerido, corregido, detalle, origen, fecha)
+        conn.commit()
+
+
+def _registrar_huella(cur, negocio_id, canal, fecha, origen, huella=None):
+    """Huella de un envío confirmado: plantilla, estrategia, largo, preguntas y si se editó (sin el texto)."""
+    import aprendizaje
+    import validacion
+    n = cur.execute("SELECT * FROM negocios WHERE id = ?", (negocio_id,)).fetchone()
+    if not n:
+        return
+    p = dict(n)
+    mensaje = ""
+    if canal == "whatsapp":
+        fila = cur.execute("""SELECT mensaje FROM intentos_contacto WHERE negocio_id = ? AND accion = 'whatsapp_abierto'
+                              ORDER BY id DESC LIMIT 1""", (negocio_id,)).fetchone()
+        mensaje = fila["mensaje"] if fila else ""
+    h = huella or aprendizaje.huella_envio(mensaje, p)
+    codigos = []
+    if mensaje:
+        tipo = "seguimiento" if h["plantilla"] == "mensaje_seguimiento" else "inicial"
+        rev = validacion.revisar_mensaje(mensaje, p, tipo=tipo)
+        codigos = sorted({x["codigo"] for x in rev["hallazgos"] if x["severidad"] in ("bloqueo", "revision")})
+    cur.execute("""
+        INSERT INTO envios_huella (negocio_id, seudonimo, fecha, canal, plantilla, estrategia, caracteres, preguntas, editado, codigos_revision, origen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (negocio_id, aprendizaje.seudonimo(negocio_id), fecha, canal, h["plantilla"], h["estrategia"], h["caracteres"],
+          h["preguntas"], 1 if h["editado"] else 0, json.dumps(codigos), origen))
+    if h["editado"]:
+        _registrar_aprendizaje(cur, "mensaje_editado", negocio_id, codigo=h["plantilla"],
+                               detalle=f"{h['caracteres']} caracteres, {h['preguntas']} pregunta(s)", origen=origen, fecha=fecha)
+    if codigos:
+        _registrar_aprendizaje(cur, "revision_aprobada", negocio_id, codigo=",".join(codigos),
+                               detalle="Enviado con observaciones del revisor aprobadas por una persona.", origen=origen, fecha=fecha)
+
+
+def register_qr(negocio_id, entrada, origen="pc", fecha=None):
+    """Guarda un QR ya interpretado y confirmado por una persona: solo tipo y dominio."""
+    import qr_local
+    limpia = qr_local.sanear_qr(entrada)
+    if not limpia:
+        raise ValueError("El QR no tiene un tipo que se pueda guardar.")
+    cuando = (fecha or "").strip() or datetime.now().isoformat(timespec="seconds")
+    with get_db() as conn:
+        cur = conn.cursor()
+        prev = cur.execute("SELECT qr_recibidos FROM negocios WHERE id = ?", (negocio_id,)).fetchone()
+        if not prev:
+            raise ValueError(f"Prospecto con ID {negocio_id} no encontrado.")
+        lista = qr_local.lista_qr({"qr_recibidos": prev["qr_recibidos"] or "[]"})
+        if (limpia["tipo"], limpia["dominio"]) not in {(e["tipo"], e["dominio"]) for e in lista}:
+            lista.append(limpia)
+            cur.execute("UPDATE negocios SET qr_recibidos = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (json.dumps(lista, ensure_ascii=False), negocio_id))
+            _auditar(cur, negocio_id, "QR_RECIBIDO", {"qr_recibidos": prev["qr_recibidos"]}, {"qr": limpia, "fecha": cuando},
+                     f"QR interpretado y confirmado por una persona ({origen})")
+        conn.commit()
+        return lista
+
+
+def contar_uso(funcion, tokens=0):
+    """Contador de uso por función. Todo es por reglas: los tokens de IA se quedan en 0."""
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO consumo_ia (funcion, llamadas, tokens, actualizado) VALUES (?, 1, ?, ?)
+            ON CONFLICT(funcion) DO UPDATE SET llamadas = llamadas + 1, tokens = tokens + excluded.tokens, actualizado = excluded.actualizado
+        """, (str(funcion)[:40], int(tokens), datetime.now().isoformat(timespec="seconds")))
+        conn.commit()
+
+
+def get_learning_report(limite=500) -> dict:
+    """Informe de aprendizaje sin datos personales (seudónimos, sin ids ni nombres)."""
+    import aprendizaje
+    import reglas
+    r = reglas.cargar_reglas()
+    with get_db() as conn:
+        registro = [dict(x) for x in conn.execute(
+            "SELECT fecha, tipo, seudonimo, sector, codigo, sugerido, corregido, detalle, origen FROM aprendizaje_registro ORDER BY id DESC LIMIT ?",
+            (limite,))]
+        resumen = {x["tipo"]: x["n"] for x in conn.execute("SELECT tipo, COUNT(*) AS n FROM aprendizaje_registro GROUP BY tipo")}
+        huellas = [dict(x) for x in conn.execute("SELECT * FROM envios_huella ORDER BY negocio_id, fecha, id")]
+        clasif = {}
+        for x in conn.execute("SELECT negocio_id, fecha, clasificacion FROM interacciones ORDER BY fecha, id"):
+            clasif.setdefault(x["negocio_id"], []).append((x["fecha"] or "", x["clasificacion"]))
+        consumo = {x["funcion"]: dict(x) for x in conn.execute("SELECT * FROM consumo_ia")}
+    salida_huellas = []
+    for i, h in enumerate(huellas):
+        siguiente = huellas[i + 1]["fecha"] if i + 1 < len(huellas) and huellas[i + 1]["negocio_id"] == h["negocio_id"] else None
+        # Respuestas desde el envío hasta el siguiente envío al mismo negocio (fechas ISO, al segundo)
+        cs = [c for f, c in clasif.get(h["negocio_id"], [])
+              if f[:19] >= h["fecha"][:19] and (siguiente is None or f[:19] < siguiente[:19])]
+        salida_huellas.append({"seudonimo": h["seudonimo"], "fecha": h["fecha"], "canal": h["canal"], "plantilla": h["plantilla"],
+                               "estrategia": h["estrategia"], "caracteres": h["caracteres"], "preguntas": h["preguntas"],
+                               "editado": bool(h["editado"]), "codigos_revision": json.loads(h["codigos_revision"] or "[]"),
+                               "resultado": aprendizaje.resultado_envio(cs, r)})
+    funciones = list(dict.fromkeys(r["aprendizaje"]["funciones"] + list(consumo)))
+    tokens = [{"funcion": f, "llamadas": consumo.get(f, {}).get("llamadas", 0), "tokens": consumo.get(f, {}).get("tokens", 0)} for f in funciones]
+    return {
+        "seudonimizacion": aprendizaje.NOTA_SEUDONIMIZACION,
+        "registro": registro,
+        "resumen": resumen,
+        "huellas": salida_huellas,
+        "estrategias": aprendizaje.comparar_estrategias(salida_huellas, r),
+        "tokens": tokens,
+        "tokens_total": sum(t["tokens"] for t in tokens),
+        "muestra_minima": r["aprendizaje"]["muestra_minima"],
+    }
 
 
 def get_dashboard_metrics():
@@ -1661,6 +1845,12 @@ def register_interaction(negocio_id, texto, clasificacion, memoria=None, recurso
                 INSERT INTO memoria_comercial (negocio_id, tipo, servicio, texto, fuente, vigente, creado_en, interaccion_id, origen)
                 VALUES (?, 'dato_corregido', '', ?, 'prospecto', 1, ?, ?, ?)
             """, (negocio_id, texto_guardado[:200], cuando, inter_id, origen))
+        if sugerida and sugerida != clasificacion:
+            _registrar_aprendizaje(cur, "clasificacion_corregida", negocio_id, codigo=clasificacion, sugerido=sugerida,
+                                   corregido=clasificacion, detalle=texto_guardado, origen=origen, fecha=cuando)
+        if info["pide_revision_identidad"]:
+            _registrar_aprendizaje(cur, "dato_incorrecto", negocio_id, codigo="correccion_del_negocio",
+                                   detalle=texto_guardado, origen=origen, fecha=cuando)
         if cambios:
             asignaciones = ", ".join(f"{k} = ?" for k in cambios)
             cur.execute(f"UPDATE negocios SET {asignaciones}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",

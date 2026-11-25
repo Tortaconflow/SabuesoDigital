@@ -76,6 +76,30 @@ RESPUESTAS = [
     "Estamos contentos con nuestra página y queremos conservarla. Solo nos interesa algo para Instagram. No tenemos presupuesto, escríbanme a ana@correo.com o al 954 123 4567.",
 ]
 CASOS[-1]["identidad_revisada_firma"] = V.firma_identidad(CASOS[-1])
+# Fase 3: QR recibidos (lista y JSON guardado en la base)
+CASOS += [
+    {"id": 27, "nombre": "Restaurante La Palapa", "sector": "Restaurante", "municipio": "Mazunte", "web": "https://lapalapa.example",
+     "whatsapp": "529581239876", "whatsapp_estado": "WHATSAPP_COMPROBADO", "qr_recibidos": [{"tipo": "menu_digital", "dominio": "menu.example"}]},
+    {"id": 28, "nombre": "Cafetería Raíz", "sector": "Alimentos", "municipio": "Oaxaca", "web": "https://cafeteriaraiz.example",
+     "qr_recibidos": '[{"tipo": "wifi", "dominio": "secreto"}, {"tipo": "redes", "dominio": "instagram.com"}, {"tipo": "inventado"}, {"tipo": "redes", "dominio": "instagram.com"}]'},
+]
+def HUELLAS(casos):
+    c = dict(casos[0], mensaje_personalizado="Hola, equipo. ¿Atienden por WhatsApp?", mensaje_calido="Gracias por responder.",
+             mensaje_seguimiento="Hola de nuevo.", servicio_sugerido="catalogos")
+    return [("Hola, equipo.  ¿Atienden por WhatsApp?", c, ""), ("Hola de nuevo.", c, "mensaje_personalizado"),
+            ("Hola, equipo, ¿venden por catálogo? ¿Cuándo?", c, "mensaje_calido"), ("", c, ""), ("Texto nuevo", dict(c, tipo_relacion="educativa", servicio_sugerido=""), "otro")]
+
+
+CLASIFS = [[], ["automatica"], ["automatica", "informativa"], ["educativa"], ["rechazo", "educativa"], ["contratacion", "rechazo"], ["inventada"], ["humana"]]
+ENVIOS = ([{"estrategia": "comercial|mensaje_personalizado|catalogos", "resultado": x} for x in ["interes", "sin_respuesta", "rechazo"] * 4]
+          + [{"estrategia": "educativa|mensaje_personalizado|general", "resultado": "educativa"}, {"resultado": "raro"}])
+QR_TEXTOS = [
+    "https://menu.example/la-palapa", "https://wa.me/5219581234567?text=hola", "https://wa.me/c/5219581234567",
+    "WIFI:T:WPA;S:Palapa Clientes;P:secreta123;;", "BEGIN:VCARD\nFN:Ana Pérez\nTEL:9541234567\nEND:VCARD",
+    "https://www.instagram.com/lapalapa", "geo:15.66,-96.55", "https://maps.app.goo.gl/abc", "https://www.google.com/maps/place/x",
+    "HTTPS://LaPalapa.Example/Carta", "hola mundo", "whatsapp://send?phone=52951", "https://user@www.tienda.example:8080/productos?id=1",
+    "mailto:ana@correo.com", "", "   ",
+]
 
 MENSAJES = [
     ("Hola, equipo de Hotel Marbella. Les escribo de CÍDIKS. ¿Atienden reservaciones por WhatsApp?", 2),
@@ -120,8 +144,15 @@ def _python():
     conv = [{"clasif": conversacion.clasificar_respuesta(t), "memoria": conversacion.extraer_memoria(t),
              "analisis": conversacion.analizar_respuesta(t, CASOS[3], hoy="2026-11-25"), "redactado": conversacion.redactar(t)}
             for t in RESPUESTAS]
+    import qr_local
+    qr = [qr_local.interpretar_qr(t) for t in QR_TEXTOS]
+    qr += [qr_local.lista_qr(c) for c in CASOS[-2:]]
+    import aprendizaje as A
+    huellas = [A.huella_envio(m, c, pl) for m, c, pl in HUELLAS(CASOS)]
+    resultados = [A.resultado_envio(cs) for cs in CLASIFS]
+    estrategias = A.comparar_estrategias(ENVIOS)
     sectores = [R.detectar_sector(t) for t in ("Turismo y hospedaje", "Turismo", "Hotel y Restaurante El Mirador", "Muebles Rústicos", "Clínica")]
-    return {"gen": gen, "qa": qa, "tel": tel, "sectores": sectores, "conv": conv}
+    return {"gen": gen, "qa": qa, "tel": tel, "sectores": sectores, "conv": conv, "qr": qr, "apr": [huellas, resultados, estrategias]}
 
 
 NODE_SCRIPT = r"""
@@ -153,14 +184,18 @@ const tel = entrada.telefonos.map((t) => M.normalizarTelefono(t, 'MX'));
 const sectores = ['Turismo y hospedaje', 'Turismo', 'Hotel y Restaurante El Mirador', 'Muebles Rústicos', 'Clínica'].map((t) => M.detectarSector(t, r));
 const conv = entrada.respuestas.map((t) => ({ clasif: M.clasificarRespuesta(t, r), memoria: M.extraerMemoria(t, r),
   analisis: M.analizarRespuesta(t, entrada.casos[3], '2026-11-25', r), redactado: M.redactar(t) }));
-process.stdout.write(JSON.stringify({ gen, qa, tel, sectores, conv }));
+const qr = entrada.qr.map((t) => M.interpretarQr(t, r)).concat(entrada.casos.slice(-2).map((c) => M.listaQr(c, r)));
+const apr = [entrada.huellas.map(([m, c, pl]) => M.huellaEnvio(m, c, pl, r)), entrada.clasifs.map((cs) => M.resultadoEnvio(cs, r)),
+  M.compararEstrategias(entrada.envios, r)];
+process.stdout.write(JSON.stringify({ gen, qa, tel, sectores, conv, qr, apr }));
 """
 
 
 def _node(tmp_path):
     script = tmp_path / "paridad.js"
     script.write_text(NODE_SCRIPT, encoding="utf-8")
-    entrada = {"casos": CASOS, "contexto": CONTEXTO, "mensajes": MENSAJES, "telefonos": TELEFONOS, "campos": list(CAMPOS), "respuestas": RESPUESTAS}
+    entrada = {"casos": CASOS, "contexto": CONTEXTO, "mensajes": MENSAJES, "telefonos": TELEFONOS, "campos": list(CAMPOS), "respuestas": RESPUESTAS, "qr": QR_TEXTOS,
+               "huellas": HUELLAS(CASOS), "clasifs": CLASIFS, "envios": ENVIOS}
     proc = subprocess.run([NODE, str(script), str(BASE_DIR / "docs" / "motor.js"), str(R.RUTA_REGLAS)],
                           input=json.dumps(entrada, ensure_ascii=False), capture_output=True, text=True, timeout=60, encoding="utf-8")
     assert proc.returncode == 0, proc.stderr
@@ -182,3 +217,6 @@ def test_paridad_generacion_identidad_y_revision(tmp_path):
     for i, (a, b) in enumerate(zip(py["conv"], js["conv"])):
         assert a == b, f"Respuesta {i} ({RESPUESTAS[i][:40]}) difiere:\nPython: {a}\nJS:     {b}"
     assert py["sectores"] == js["sectores"]
+    for i, (a, b) in enumerate(zip(py["qr"], js["qr"])):
+        assert a == b, f"QR {i} difiere:\nPython: {a}\nJS:     {b}"
+    assert py["apr"] == js["apr"], f"Aprendizaje difiere:\nPython: {py['apr']}\nJS:     {js['apr']}"

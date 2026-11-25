@@ -21,8 +21,10 @@ import json
 import re
 from datetime import datetime
 
+import aprendizaje
 import conversacion
 import db
+import qr_local
 import validacion
 
 EXPORT_FORMAT = "sabueso-movil"
@@ -33,7 +35,7 @@ MAX_EVENTS = 5000
 MAX_TEXT = 2000
 MAX_MESSAGE = 5000
 
-EVENT_TYPES = {"nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota", "whatsapp_abierto", "regresar_pendientes",
+EVENT_TYPES = {"qr_recibido", "nuevo_prospecto", "contacto_confirmado", "actualizacion", "nota", "whatsapp_abierto", "regresar_pendientes",
                "revision_identidad", "interaccion", "reabrir_prospeccion"}
 CANALES = {"whatsapp", "llamada", "email", "redes", "persona"}
 ESTADOS_ACTUALIZABLES = {"investigado", "auditado", "interesado", "no_interesa", "propuesta", "ganado", "descartado"}
@@ -56,7 +58,7 @@ EXPORT_FIELDS = (
     "venta_acordada", "venta_monto", "ingreso_cobrado", "movil_uid",
     "bandeja_contacto", "intentos_whatsapp", "ultimo_intento_whatsapp", "identidad_revisada_firma",
     "prospeccion_cerrada", "cierre_motivo", "prospeccion_reabierta", "tipo_relacion", "ultima_clasificacion",
-    "contactos_confirmados_n", "primer_contacto_fecha",
+    "contactos_confirmados_n", "primer_contacto_fecha", "qr_recibidos",
 )
 
 
@@ -84,6 +86,7 @@ def build_mobile_export() -> dict:
         item["identidad_requiere_revision"] = ident["requiere_revision"]
         item["firma_identidad"] = ident["firma"]
         item["memoria"] = memorias.get(n["id"], [])
+        item["qr_recibidos"] = qr_local.lista_qr(n)
         prospectos.append(item)
 
     with db.get_db() as conn:
@@ -320,7 +323,29 @@ def _apply_contacto(negocio_id: int, datos: dict, fecha: str):
             ).fetchone()
         if n and ((n["servicio_sugerido"] or "") in ("no_contactar", "investigar_mas") or n["identidad_verificada"] == 0):
             raise EventoInvalido("Prospecto bloqueado: se requiere una nota explicativa para registrar el contacto.")
-    db.record_human_contact(negocio_id, canal, notas_marcadas, fecha_contacto=fecha_contacto)
+    db.record_human_contact(negocio_id, canal, notas_marcadas, fecha_contacto=fecha_contacto, origen="movil",
+                            huella=_huella_movil(datos.get("huella")))
+
+
+_RE_ESTRATEGIA = re.compile(r"^[a-z_]{1,30}\|[a-z_]{1,30}\|[a-z_]{1,40}$")
+
+
+def _huella_movil(h):
+    """Huella calculada en el celular contra SUS borradores (pueden diferir de los de la PC). Se valida todo."""
+    if not isinstance(h, dict):
+        return None
+    plantilla = _text(h.get("plantilla"), 40, "plantilla")
+    estrategia = _text(h.get("estrategia"), 110, "estrategia")
+    if plantilla not in aprendizaje.PLANTILLAS + ("sin_mensaje",) or not _RE_ESTRATEGIA.match(estrategia):
+        return None
+    try:
+        caracteres, preguntas = int(h.get("caracteres")), int(h.get("preguntas"))
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= caracteres <= MAX_MESSAGE and 0 <= preguntas <= 100):
+        return None
+    return {"plantilla": plantilla, "estrategia": estrategia, "caracteres": caracteres, "preguntas": preguntas,
+            "editado": h.get("editado") is True}
 
 
 def _apply_actualizacion(negocio_id: int, datos: dict):
@@ -390,6 +415,7 @@ def _apply_revision_identidad(negocio_id: int, datos: dict, fecha: str):
     if decision not in ("confirmar", "corregir"):
         raise EventoInvalido("Decisión de revisión inválida.")
     if decision == "corregir":
+        antes = db.get_negocio_detail(negocio_id) or {}
         cambios = {"id": negocio_id}
         nombre = _text(datos.get("nombre"), 200, "nombre")
         sector = _text(datos.get("sector"), 120, "sector")
@@ -400,6 +426,9 @@ def _apply_revision_identidad(negocio_id: int, datos: dict, fecha: str):
         if len(cambios) == 1:
             raise EventoInvalido("La corrección no trae nombre ni giro.")
         db.save_or_update_negocio(cambios)
+        db.registrar_aprendizaje("identidad_corregida", negocio_id, codigo="+".join(k for k in ("nombre", "sector") if k in cambios),
+                                 sugerido=antes.get("sector") or "", corregido=cambios.get("sector", antes.get("sector") or ""),
+                                 detalle=nota, origen="movil", fecha=fecha)
     detalle = db.get_negocio_detail(negocio_id)
     firma_actual = validacion.firma_identidad(detalle)
     firma_vista = _text(datos.get("firma_vista"), 16, "firma_vista")
@@ -501,6 +530,10 @@ def apply_mobile_events(payload: dict) -> dict:
                     _apply_nota(negocio_id, datos, fecha)
                 elif tipo == "whatsapp_abierto":
                     _apply_whatsapp_abierto(negocio_id, datos, fecha, evento_uuid)
+                elif tipo == "qr_recibido":
+                    if not qr_local.sanear_qr(datos):
+                        raise EventoInvalido("El QR no tiene un tipo que se pueda guardar.")
+                    db.register_qr(negocio_id, datos, origen="movil", fecha=fecha)
                 elif tipo == "interaccion":
                     _apply_interaccion(negocio_id, datos, fecha, evento_uuid)
                 elif tipo == "reabrir_prospeccion":

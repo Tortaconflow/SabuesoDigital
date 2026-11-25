@@ -170,6 +170,9 @@
                             <i class="fa-solid fa-file-excel"></i> Excel
                         </button>
                     </div>
+                    <button class="btn btn-secondary" id="btn-aprendizaje-open" title="Errores y correcciones seudonimizados, comparación por estrategia y tokens de IA">
+                        <i class="fa-solid fa-graduation-cap"></i> Aprendizaje
+                    </button>
                     <button class="btn btn-secondary" id="btn-movil-open" title="Pasar prospectos al iPhone y traer los avances del celular (Sabueso Móvil)">
                         <i class="fa-solid fa-mobile-screen-button"></i> Celular
                     </button>
@@ -549,6 +552,22 @@
                         </div>
                     </div>
 
+                    <div class="form-group" id="qr-box" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                        <label style="margin-bottom: 6px; display: block;"><i class="fa-solid fa-qrcode"></i> QR recibido (se lee aquí, sin internet; el enlace nunca se abre)</label>
+                        <div id="qr-guardados" style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;"></div>
+                        <label for="qr-archivo" style="font-size: 11px;">Foto o captura del QR</label>
+                        <input type="file" id="qr-archivo" accept="image/*" style="width: 100%; font-size: 12px;">
+                        <label for="qr-texto" style="font-size: 11px; margin-top: 6px; display: block;">o pega el enlace o el contenido</label>
+                        <input type="text" id="qr-texto" placeholder="https://…" style="width: 100%; font-size: 12px;">
+                        <button type="button" class="btn btn-secondary" id="btn-qr-interpretar" style="font-size: 11px; margin-top: 6px;">Interpretar QR</button>
+                        <div id="qr-resultado" style="display: none; margin-top: 8px; font-size: 12px;">
+                            <div><strong id="qr-tipo"></strong></div>
+                            <div id="qr-vista" style="word-break: break-all; color: var(--text-muted);"></div>
+                            <div id="qr-observacion" style="margin-top: 4px;"></div>
+                            <button type="button" class="btn btn-primary" id="btn-qr-guardar" style="font-size: 11px; margin-top: 6px;">Guardar en la memoria del negocio</button>
+                        </div>
+                    </div>
+
                     <!-- Seguimiento Comercial Desglosado -->
                     <div class="form-group" style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
                         <label style="margin-bottom: 8px; display: block;"><i class="fa-solid fa-chart-line"></i> Evolución Comercial Real (CÍDIKS)</label>
@@ -704,6 +723,31 @@
     </div>
 
     <!-- Modal Sabueso Móvil (sincronización con iPhone por archivo) -->
+    <div class="modal hidden" id="aprendizaje-modal">
+        <div class="modal-content" style="max-width: 820px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-graduation-cap"></i> Aprendizaje · errores, correcciones y estrategias</h3>
+                <button class="btn-close" id="aprendizaje-modal-close" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-info" id="apr-nota"></p>
+                <p id="apr-tokens" style="font-size: 13px;"></p>
+                <h4 style="margin: 10px 0 6px;">Comparación por estrategia</h4>
+                <div style="overflow-x: auto;"><table class="data-table" id="apr-estrategias" style="width: 100%; font-size: 12px;">
+                    <thead><tr><th>Estrategia</th><th>Envíos</th><th>Respuestas humanas</th><th>Interés</th><th>Rechazos</th><th>Educativas</th><th>% respuesta</th><th>Aviso</th></tr></thead>
+                    <tbody></tbody>
+                </table></div>
+                <h4 style="margin: 12px 0 6px;">Errores y correcciones (sin datos personales)</h4>
+                <div id="apr-resumen" style="font-size: 12px; margin-bottom: 6px;"></div>
+                <div style="overflow-x: auto; max-height: 260px;"><table class="data-table" id="apr-registro" style="width: 100%; font-size: 12px;">
+                    <thead><tr><th>Fecha</th><th>Tipo</th><th>Prospecto</th><th>Giro</th><th>Sugerido → corregido</th><th>Detalle</th></tr></thead>
+                    <tbody></tbody>
+                </table></div>
+                <a class="btn btn-secondary" href="/api/aprendizaje/exportar" style="margin-top: 10px; display: inline-block;"><i class="fa-solid fa-download"></i> Descargar informe seudonimizado</a>
+            </div>
+        </div>
+    </div>
+
     <div class="modal hidden" id="movil-modal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
@@ -785,6 +829,7 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Main JS script -->
+    <script src="{{ url_for('static', filename='js/vendor/jsQR.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

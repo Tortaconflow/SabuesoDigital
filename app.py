@@ -7,6 +7,7 @@ import urllib.parse
 import socket
 import ipaddress
 import warnings
+from datetime import datetime
 from pathlib import Path
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -34,6 +35,7 @@ import contact_identity
 import validacion
 import reglas
 import conversacion
+import qr_local
 
 # Configuración de codificación y registro en log
 try:
@@ -829,14 +831,60 @@ def _id_de(body):
 
 def _regenerar_borradores(negocio_id):
     """Rehace los borradores con el estado actual (cierre, memoria, relación). Nunca envía nada."""
+    db.contar_uso("copiloto")
     detail = db.get_negocio_detail(negocio_id)
     res = copilot.generate_cidiks_messages(detail, evidencias=detail.get("evidencias", []), contexto=db.get_all_negocios())
     db.save_or_update_negocio({
         "id": negocio_id, "servicio_sugerido": res["servicio_sugerido"], "hipotesis_comercial": res["hipotesis_comercial"],
         "pregunta_comercial": res["pregunta_comercial"], "mensaje_personalizado": res["mensaje_personalizado"],
         "mensaje_calido": res["mensaje_calido"], "mensaje_seguimiento": res["mensaje_seguimiento"], "mensaje_aprobado": 0,
+        "observacion_verificada": res["observacion_verificada"],
     })
     return res
+
+
+# ---------------------------------------------------------------- Fase 3: QR local
+@app.route("/api/qr/interpretar", methods=["POST"])
+def api_qr_interpretar():
+    """Interpreta el texto de un QR (leído en el navegador o pegado). Nunca abre el enlace ni guarda nada."""
+    body = request.json or {}
+    texto = str(body.get("texto") or "")[:2000]
+    if not texto.strip():
+        return jsonify({"error": "No se encontró texto en el QR. Pega el enlace o el contenido a mano."}), 400
+    db.contar_uso("qr")
+    return jsonify(qr_local.interpretar_qr(texto))
+
+
+@app.route("/api/qr/registrar", methods=["POST"])
+def api_qr_registrar():
+    """Guarda solo tipo y dominio del QR confirmado por una persona y rehace los borradores."""
+    body = request.json or {}
+    negocio_id = _id_de(body)
+    if not negocio_id or not db.get_negocio_detail(negocio_id):
+        return jsonify({"error": "Prospecto no encontrado"}), 404
+    try:
+        db.register_qr(negocio_id, body.get("entrada"), origen="pc")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    res = _regenerar_borradores(negocio_id)
+    return jsonify({"success": True, "prospecto": _with_contact_tray(db.get_negocio_detail(negocio_id)), "copilot": res})
+
+
+# ---------------------------------------------------------------- Fase 4: aprendizaje y métricas
+@app.route("/api/aprendizaje", methods=["GET"])
+def api_aprendizaje():
+    """Errores y correcciones seudonimizados, huella de envíos, comparación por estrategia y tokens (0)."""
+    return jsonify(db.get_learning_report())
+
+
+@app.route("/api/aprendizaje/exportar", methods=["GET"])
+def api_aprendizaje_exportar():
+    """Descarga el informe seudonimizado (sin nombres, teléfonos, correos ni ids) para revisar las reglas."""
+    rep = db.get_learning_report(limite=5000)
+    rep["generado"] = datetime.now().isoformat(timespec="seconds")
+    resp = app.response_class(json.dumps(rep, ensure_ascii=False, indent=2), mimetype="application/json")
+    resp.headers["Content-Disposition"] = f"attachment; filename=sabueso_aprendizaje_{datetime.now():%Y%m%d}.json"
+    return resp
 
 
 @app.route("/api/interacciones/analizar", methods=["POST"])
@@ -851,6 +899,7 @@ def api_interaccion_analizar():
     if not texto.strip():
         return jsonify({"error": "Pega la respuesta que recibiste."}), 400
     r = reglas.cargar_reglas()
+    db.contar_uso("clasificacion")
     analisis = conversacion.analizar_respuesta(texto, detail)
     analisis["categorias"] = [{"id": cid, "nombre": c["nombre"]} for cid, c in r["respuestas"]["categorias"].items()]
     return jsonify(analisis)
@@ -924,6 +973,7 @@ def api_revisar_mensaje():
         return jsonify({"error": "Prospecto no encontrado"}), 404
     texto = str(body.get("texto") or "")[:5000]
     tipo = "seguimiento" if body.get("tipo") == "seguimiento" else "inicial"
+    db.contar_uso("revision")
     return jsonify(validacion.revisar_mensaje(texto, detail, contexto=db.get_all_negocios(), tipo=tipo))
 
 
@@ -946,6 +996,7 @@ def api_identity_review():
         return jsonify({"error": "Prospecto no encontrado"}), 404
     nota = str(body.get("nota") or "").strip()[:2000]
     if decision == "corregir":
+        antes_sector = detail.get("sector") or ""
         cambios = {"id": negocio_id}
         nombre = str(body.get("nombre") or "").strip()[:200]
         sector = str(body.get("sector") or "").strip()[:120]
@@ -956,6 +1007,8 @@ def api_identity_review():
         if len(cambios) == 1:
             return jsonify({"error": "Indica el nombre o el giro correcto."}), 400
         db.save_or_update_negocio(cambios)
+        db.registrar_aprendizaje("identidad_corregida", negocio_id, codigo="+".join(k for k in ("nombre", "sector") if k in cambios),
+                                 sugerido=antes_sector, corregido=cambios.get("sector", antes_sector), detalle=nota, origen="pc")
         detail = db.get_negocio_detail(negocio_id)
     db.record_identity_review(negocio_id, validacion.firma_identidad(detail), nota=nota, origen="pc")
     detail = db.get_negocio_detail(negocio_id)
@@ -1132,6 +1185,7 @@ def api_search():
             otros_count += 1
 
         # Generar borrador comercial inicial conversacional con CÍDIKS Copilot
+        db.contar_uso("copiloto")
         copilot_res = copilot.generate_cidiks_messages(
             prospect=b,
             evidencias=[],
@@ -1202,6 +1256,7 @@ def api_audit():
                   "cierre_motivo", "tipo_relacion", "contactos_confirmados_n", "primer_contacto_fecha",
                   "fecha_contacto_confirmada", "estado_comercial"):
         datos_generacion[clave] = prospect.get(clave)
+    db.contar_uso("copiloto")
     copilot_res = copilot.generate_cidiks_messages(
         prospect=datos_generacion,
         evidencias=evidencias,
@@ -1340,6 +1395,7 @@ def api_copilot_regenerate():
 
     prospect["servicio_sugerido"] = servicio_sugerido
     prospect["_force_explicit"] = True
+    db.contar_uso("copiloto")
     copilot_res = copilot.generate_cidiks_messages(
         prospect=prospect,
         evidencias=prospect.get("evidencias", []),

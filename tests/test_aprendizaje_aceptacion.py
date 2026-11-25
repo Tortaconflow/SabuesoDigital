@@ -2,8 +2,7 @@
 Pruebas de aceptación — Fase de aprendizaje basado en errores reales.
 
 Cada prueba reproduce un error observado en interacciones reales (ver APRENDIZAJE_ERRORES.md).
-La que corresponde a la Fase 3 (aún no autorizada) está marcada como xfail estricto:
-documentan el error y fallarán en rojo si alguien las corrige sin actualizar la prueba.
+Los 7 casos ya pasan (Fases 1, 2 y 3).
 """
 import re
 import sys
@@ -147,7 +146,7 @@ def test_caso7_necesidad_confirmada_determina_la_solucion():
 
 
 # ---------------------------------------------------------------------------
-# Fase 2 (casos 3, 4 y 6, ya corregidos) y Fase 3 (caso 5, xfail estricto).
+# Fase 2 (casos 3, 4 y 6) y Fase 3 (caso 5, QR local).
 # ---------------------------------------------------------------------------
 def test_caso3_si_quiere_conservar_su_pagina_no_se_insiste():
     p = {"id": 505, "nombre": "Hotel Las Palmas", "sector": "Turismo y hospedaje", "municipio": "Puerto Escondido",
@@ -166,7 +165,6 @@ def test_caso4_respuesta_automatica_no_cuenta_como_oportunidad(isolated_sqlite_d
     assert m["respuestas_recibidas"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason="Fase 3: lectura local de QR")
 def test_caso5_qr_recibido_se_interpreta_antes_de_recomendar():
     p = {"id": 606, "nombre": "Restaurante La Palapa", "sector": "Restaurante", "municipio": "Mazunte",
          "web": "https://lapalapa.example", "whatsapp": "529581239876", "whatsapp_estado": "WHATSAPP_COMPROBADO",

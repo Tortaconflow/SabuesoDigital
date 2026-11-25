@@ -19,6 +19,7 @@ Reglas:
 import json
 
 import conversacion
+import qr_local
 import reglas as R
 import validacion
 
@@ -206,6 +207,7 @@ def build_verified_observation(prospect: dict, evidencias: list = None) -> str:
     if verificadas and verificadas[0].get("elemento_observado"):
         parts.append(f"evidencia visual comprobada: {verificadas[0]['elemento_observado']}")
 
+    parts += qr_local.observaciones_qr(prospect)  # Fase 3: hechos que aportan los QR recibidos
     obs = "; ".join(parts)
     return obs[0].upper() + obs[1:] + "."
 

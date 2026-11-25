@@ -818,6 +818,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Outreach links
             renderIdentityReview(p);
             renderConversacion(p);
+            renderQr(p);
             updateOutreachLinks(p);
             requestMessageReview();
 
@@ -1085,6 +1086,100 @@ document.addEventListener("DOMContentLoaded", () => {
         cerrada.style.display = pr.cerrada ? "block" : "none";
         const ct = document.getElementById("conv-cerrada-texto");
         if (ct) ct.textContent = pr.cerrada ? `Prospección cerrada: ${pr.motivo} No se envían mensajes comerciales ni seguimientos.` : "";
+    }
+
+    // ---------------------------------------------------------------- Fase 3: QR recibido (local, sin abrir enlaces)
+    const NOMBRES_QR = { menu_digital: "Menú o catálogo digital", whatsapp: "WhatsApp", redes: "Redes sociales", mapa: "Mapa o ubicación",
+        contacto: "Tarjeta de contacto", wifi: "Wi-Fi", enlace: "Enlace web" };
+    let qrPendiente = null;
+    function renderQr(p) {
+        qrPendiente = null;
+        const res = document.getElementById("qr-resultado");
+        if (res) res.style.display = "none";
+        ["qr-texto", "qr-archivo"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+        const g = document.getElementById("qr-guardados");
+        if (!g) return;
+        let lista = [];
+        try { lista = typeof p.qr_recibidos === "string" ? JSON.parse(p.qr_recibidos || "[]") : (p.qr_recibidos || []); } catch { lista = []; }
+        g.textContent = lista.length ? "Guardados: " + lista.map((e) => (NOMBRES_QR[e.tipo] || e.tipo) + (e.dominio ? ` (${e.dominio})` : "")).join(", ") : "Aún no hay QR guardados.";
+    }
+    async function leerQrDeArchivo(archivo) {
+        const url = URL.createObjectURL(archivo);
+        try {
+            const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => mal(new Error("No se pudo abrir la imagen.")); i.src = url; });
+            const escala = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+            const c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(img.naturalWidth * escala)); c.height = Math.max(1, Math.round(img.naturalHeight * escala));
+            const ctx = c.getContext("2d", { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            const d = ctx.getImageData(0, 0, c.width, c.height);
+            const r = typeof window.jsQR === "function" ? window.jsQR(d.data, c.width, c.height, { inversionAttempts: "attemptBoth" }) : null;
+            return r ? r.data : "";
+        } finally { URL.revokeObjectURL(url); }
+    }
+    const btnQrInterpretar = document.getElementById("btn-qr-interpretar");
+    if (btnQrInterpretar) {
+        btnQrInterpretar.addEventListener("click", async () => {
+            if (!selectedProspectId) return;
+            try {
+                let texto = (document.getElementById("qr-texto").value || "").trim();
+                const archivo = document.getElementById("qr-archivo").files[0];
+                if (!texto && archivo) {
+                    texto = await leerQrDeArchivo(archivo);
+                    if (!texto) throw new Error("No se pudo leer el QR de la imagen (puede estar borrosa). Pega el enlace a mano.");
+                }
+                if (!texto) throw new Error("Elige una foto del QR o pega su contenido.");
+                const res = await fetch("/api/qr/interpretar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }) });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "No se pudo interpretar.");
+                qrPendiente = data.guardable ? data.entrada : null;
+                document.getElementById("qr-tipo").textContent = data.nombre;
+                document.getElementById("qr-vista").textContent = data.vista;  // como texto: nunca se abre
+                document.getElementById("qr-observacion").textContent = data.observacion
+                    ? `Se registrará: «${data.observacion}».` : "Este QR no aporta un dato para guardar.";
+                document.getElementById("btn-qr-guardar").style.display = qrPendiente ? "" : "none";
+                document.getElementById("qr-resultado").style.display = "block";
+            } catch (err) { showToast("error", "QR", err.message); }
+        });
+    }
+    const btnQrGuardar = document.getElementById("btn-qr-guardar");
+    if (btnQrGuardar) {
+        btnQrGuardar.addEventListener("click", async () => {
+            if (!selectedProspectId || !qrPendiente) return;
+            try { await postConv("/api/qr/registrar", { entrada: qrPendiente }, "QR guardado"); }
+            catch (err) { showToast("error", "QR", err.message); }
+        });
+    }
+
+    // ---------------------------------------------------------------- Fase 4: aprendizaje
+    const aprModal = document.getElementById("aprendizaje-modal");
+    const celda = (t) => { const td = document.createElement("td"); td.textContent = t == null ? "" : String(t); return td; };
+    const fila = (vals) => { const tr = document.createElement("tr"); vals.forEach((v) => tr.appendChild(celda(v))); return tr; };
+    const btnAprOpen = document.getElementById("btn-aprendizaje-open");
+    if (btnAprOpen && aprModal) {
+        btnAprOpen.addEventListener("click", async () => {
+            try {
+                const res = await fetch("/api/aprendizaje");
+                const rep = await res.json();
+                if (!res.ok) throw new Error(rep.error || "No se pudo cargar.");
+                document.getElementById("apr-nota").textContent = rep.seudonimizacion;
+                document.getElementById("apr-tokens").textContent = `Tokens de IA: ${rep.tokens_total} · ` +
+                    rep.tokens.map((t) => `${t.funcion}: ${t.llamadas} usos, ${t.tokens} tokens`).join(" · ");
+                const est = document.querySelector("#apr-estrategias tbody");
+                est.replaceChildren(...(rep.estrategias.length ? rep.estrategias.map((e) => fila([e.estrategia.split("|").join(" · "), e.enviados,
+                    e.respuestas_humanas, e.interes, e.rechazos, e.educativas, `${e.tasa_respuesta}%`, e.aviso || "—"]))
+                    : [fila(["Aún no hay envíos confirmados.", "", "", "", "", "", "", ""])]));
+                const nombres = { clasificacion_corregida: "Clasificación corregida", dato_incorrecto: "Dato incorrecto", identidad_corregida: "Identidad corregida",
+                    mensaje_editado: "Mensaje editado", revision_aprobada: "Observación aprobada" };
+                document.getElementById("apr-resumen").textContent = Object.keys(rep.resumen).length
+                    ? Object.entries(rep.resumen).map(([k, v]) => `${nombres[k] || k}: ${v}`).join(" · ") : "Sin errores ni correcciones registrados.";
+                const reg = document.querySelector("#apr-registro tbody");
+                reg.replaceChildren(...rep.registro.map((x) => fila([String(x.fecha).slice(0, 16).replace("T", " "), nombres[x.tipo] || x.tipo, x.seudonimo,
+                    x.sector, x.sugerido || x.corregido ? `${x.sugerido || "—"} → ${x.corregido || "—"}` : x.codigo, x.detalle])));
+                aprModal.classList.remove("hidden");
+            } catch (err) { showToast("error", "Aprendizaje", err.message); }
+        });
+        document.getElementById("aprendizaje-modal-close").addEventListener("click", () => aprModal.classList.add("hidden"));
     }
 
     async function postConv(url, payload, okMsg) {

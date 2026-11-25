@@ -10,7 +10,7 @@
 (function () {
     "use strict";
 
-    const APP_VERSION = "1.3.0";
+    const APP_VERSION = "1.4.0";
     const FORMATO_PC = "sabueso-movil";
     const FORMATO_AVANCES = "sabueso-movil-avances";
     const FORMATO_RESPALDO = "sabueso-movil-respaldo";
@@ -364,6 +364,7 @@
             v.primer_contacto_fecha = v.primer_contacto_fecha || d.fecha || ev.fecha;
             v.contactos_confirmados_n = (Number(v.contactos_confirmados_n) || 0) + 1;
             v.canal = d.canal;
+            if (d.huella) v.ultima_huella = d.huella;  // Fase 4: qué se envió (sin el texto)
         } else if (ev.tipo === "actualizacion") {
             Object.assign(v, d);
         } else if (ev.tipo === "nota") {
@@ -373,6 +374,12 @@
             if (bandejaDe(v) !== "contactado") v.bandeja_contacto = "abierto";
             v.intentos_whatsapp = (Number(v.intentos_whatsapp) || 0) + 1;
             v.ultimo_intento_whatsapp = ev.fecha;
+            v.ultimo_mensaje_abierto = d.mensaje || "";
+            v.ultima_plantilla = d.plantilla || "";
+        } else if (ev.tipo === "qr_recibido") {
+            // Fase 3: solo tipo y dominio (mismo saneado que la PC)
+            const lista = (Array.isArray(v.qr_recibidos) ? v.qr_recibidos : []).concat([{ tipo: d.tipo, dominio: d.dominio }]);
+            v.qr_recibidos = REGLAS ? M.listaQr({ qr_recibidos: lista }, REGLAS) : lista;
         } else if (ev.tipo === "regresar_pendientes") {
             v.bandeja_contacto = "pendiente";
         } else if (ev.tipo === "revision_identidad") {
@@ -473,6 +480,9 @@
             tipo: texto(m.tipo, 40), servicio: texto(m.servicio, 40), texto: texto(m.texto, 200),
             fuente: texto(m.fuente, 20) || "prospecto", vigente: m.vigente === 0 ? 0 : 1
         }));
+        p.qr_recibidos = (Array.isArray(raw.qr_recibidos) ? raw.qr_recibidos : []).slice(0, 30)
+            .map((e) => ({ tipo: texto(e && e.tipo, 30), dominio: texto(e && e.dominio, 253).toLowerCase() }))
+            .filter((e) => /^[a-z_]+$/.test(e.tipo) && (!e.dominio || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(e.dominio)));
         p.nombre = p.nombre || "Sin nombre";
         p.origen = "pc";
         return p;
@@ -830,6 +840,21 @@
             metrica(pesos(vendido), "Venta acordada"),
             metrica(pesos(cobrado), "Ingreso cobrado")
         ));
+        // Fase 4: comparación por estrategia (huella de cada envío confirmado en este celular). 0 tokens de IA.
+        if (REGLAS) {
+            const envios = lista.filter((p) => p.ultima_huella && p.ultima_huella.estrategia).map((p) => ({
+                estrategia: p.ultima_huella.estrategia,
+                resultado: M.resultadoEnvio([M.ultimaClasificacion(p, REGLAS)].filter(Boolean), REGLAS)
+            }));
+            out.push(h("h3", null, "Qué estrategia funciona"));
+            const est = M.compararEstrategias(envios, REGLAS);
+            if (!est.length) out.push(h("p", { class: "parrafo" }, "Aún no hay envíos confirmados con huella."));
+            est.forEach((e) => out.push(h("div", { class: "card" },
+                h("strong", null, e.estrategia.split("|").join(" · ")),
+                h("p", { class: "muy-chico" }, `${e.enviados} envíos · ${e.respuestas_humanas} respuestas humanas (${e.tasa_respuesta}%) · ${e.interes} interés · ${e.rechazos} rechazos · ${e.educativas} educativas`),
+                e.aviso ? h("p", { class: "muy-chico" }, e.aviso) : null)));
+            out.push(h("p", { class: "muy-chico" }, "Tokens de IA usados: 0 (todo funciona con reglas en el celular)."));
+        }
         return out;
     }
 
@@ -1142,6 +1167,7 @@
                 )) : null,
 
             seccionConversacion(p, uid, vistas),
+            seccionQr(p, uid),
 
             h("h3", null, "Seguimiento comercial"),
             formularioCRM(p),
@@ -1239,6 +1265,53 @@
             resultado);
     }
 
+    // ---------------------------------------------------------------- Fase 3: QR recibido (local, nunca abre el enlace)
+    async function leerQrDeArchivo(archivo) {
+        const url = URL.createObjectURL(archivo);
+        try {
+            const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => mal(new Error("No se pudo abrir la imagen.")); i.src = url; });
+            const escala = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+            const c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(img.naturalWidth * escala)); c.height = Math.max(1, Math.round(img.naturalHeight * escala));
+            const ctx = c.getContext("2d", { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            const d = ctx.getImageData(0, 0, c.width, c.height);
+            const r = typeof window.jsQR === "function" ? window.jsQR(d.data, c.width, c.height, { inversionAttempts: "attemptBoth" }) : null;
+            return r ? r.data : "";
+        } finally { URL.revokeObjectURL(url); }
+    }
+    function seccionQr(p, uid) {
+        if (!REGLAS) return null;
+        const guardados = M.listaQr(p, REGLAS);
+        const archivo = h("input", { type: "file", accept: "image/*", "aria-label": "Foto o captura del QR" });
+        const manual = h("input", { type: "text", placeholder: "o pega el enlace o el contenido", "aria-label": "Contenido del QR" });
+        const resultado = h("div");
+        const interpretar = async () => {
+            let t = manual.value.trim();
+            try {
+                if (!t && archivo.files[0]) t = await leerQrDeArchivo(archivo.files[0]);
+            } catch (e) { toast(e.message, "error"); return; }
+            if (!t) { toast(archivo.files[0] ? "No se pudo leer el QR (¿foto borrosa?). Pega el enlace a mano." : "Elige una foto del QR o pega su contenido."); return; }
+            const q = M.interpretarQr(t, REGLAS);
+            resultado.replaceChildren(
+                h("p", null, h("strong", null, q.nombre)),
+                h("p", { class: "muy-chico", style: "word-break: break-all" }, q.vista),
+                h("p", { class: "parrafo" }, q.observacion ? `Se registrará: «${q.observacion}».` : "Este QR no aporta un dato para guardar."),
+                q.guardable ? h("button", { class: "btn btn-primario btn-bloque", type: "button", onclick: async () => {
+                    nuevoEvento("qr_recibido", uid, q.entrada);
+                    await guardar(); await regenerarTrasCambio(uid); toast("QR guardado en el celular.", "ok");
+                } }, "Guardar en la memoria del negocio") : null);
+        };
+        return h("div", null,
+            h("h3", null, "QR recibido"),
+            h("p", { class: "muy-chico" }, (guardados.length ? "Guardados: " + guardados.map((e) => REGLAS.qr.tipos[e.tipo].nombre + (e.dominio ? ` (${e.dominio})` : "")).join(", ") + " · " : "")
+                + "se lee en el celular, sin internet; el enlace nunca se abre"),
+            h("div", { class: "campo" }, archivo),
+            h("div", { class: "campo" }, manual),
+            h("button", { class: "btn btn-bloque", type: "button", onclick: interpretar }, "Interpretar QR"),
+            resultado);
+    }
+
     // Tras una respuesta o reapertura, rehace los borradores con el estado nuevo (nunca envía nada).
     async function regenerarTrasCambio(uid) {
         const vistas = construirVistas();
@@ -1300,6 +1373,7 @@
         else if (ev.tipo === "regresar_pendientes") desc = "Regresado a Pendientes";
         else if (ev.tipo === "interaccion") desc = `Respuesta guardada: ${(REGLAS && M.infoCategoria(d.clasificacion, REGLAS) || {}).nombre || d.clasificacion}`;
         else if (ev.tipo === "reabrir_prospeccion") desc = "Prospección reabierta por solicitud expresa";
+        else if (ev.tipo === "qr_recibido") desc = `QR guardado: ${(REGLAS && REGLAS.qr.tipos[d.tipo] || {}).nombre || d.tipo}`;
         else if (ev.tipo === "revision_identidad") desc = "Identidad revisada";
         else desc = `Actualización: ${Object.keys(d).map((k) => k.replace(/_/g, " ")).join(", ")}`;
         const estadoEv = ev.sincronizado ? "✓ en la PC" : (ev.exportado_en ? "Enviado, falta confirmar" : "Solo en el celular");
@@ -1434,7 +1508,15 @@
                         const nota = texto(notas.value, 2000);
                         if (bloqueado && !nota) { toast("Este prospecto está bloqueado: la nota es obligatoria.", "error"); return; }
                         const cuando = fecha.value ? `${fecha.value}:00` : ahoraISO();
-                        nuevoEvento("contacto_confirmado", p.uid, { canal: canal.value, notas: nota, fecha: cuando });
+                        // Fase 4: huella del envío contra los borradores de este celular (sin guardar el texto)
+                        const vistasAct = construirVistas();
+                        const base = vistasAct[p.uid] || p;  // incluye la apertura de WhatsApp más reciente
+                        // el servicio del borrador vigente (puede haber cambiado en el celular por una respuesta o un QR)
+                        const gen = REGLAS ? generarMensajes(base, Object.values(vistasAct)) : null;
+                        const actual = gen ? { ...base, servicio_sugerido: gen.servicio_sugerido || base.servicio_sugerido } : base;
+                        const huella = REGLAS ? M.huellaEnvio(canal.value === "whatsapp" ? (actual.ultimo_mensaje_abierto || "") : "", actual,
+                            canal.value === "whatsapp" ? actual.ultima_plantilla : "", REGLAS) : null;
+                        nuevoEvento("contacto_confirmado", p.uid, { canal: canal.value, notas: nota, fecha: cuando, huella });
                         await guardar();
                         cerrarHoja();
                         toast("Contacto confirmado en el celular.", "ok");

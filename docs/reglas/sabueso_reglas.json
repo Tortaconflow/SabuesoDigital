@@ -1597,5 +1597,143 @@
         "google"
       ]
     }
-  ]
+  ],
+  "qr": {
+    "descripcion": "Interpretación local de QR recibidos. Nunca se abre el enlace. Solo se guarda el tipo y, cuando aplica, el dominio; nunca contraseñas de Wi-Fi ni datos de tarjetas de contacto.",
+    "orden": [
+      "menu_digital",
+      "whatsapp",
+      "redes",
+      "mapa"
+    ],
+    "tipos": {
+      "menu_digital": {
+        "nombre": "Menú o catálogo digital",
+        "patrones": [
+          "wa.me/c/",
+          "api.whatsapp.com/catalog"
+        ],
+        "palabras": [
+          "menu",
+          "menus",
+          "carta",
+          "catalogo",
+          "catalogos",
+          "catalog",
+          "productos"
+        ],
+        "observacion": "ya cuenta con menú digital",
+        "servicio_existente": "catalogos",
+        "guardar": true,
+        "guardar_dominio": true
+      },
+      "whatsapp": {
+        "nombre": "WhatsApp",
+        "esquemas": [
+          "whatsapp"
+        ],
+        "patrones": [
+          "wa.me",
+          "api.whatsapp.com",
+          "wa.link",
+          "chat.whatsapp.com"
+        ],
+        "observacion": "ya comparte su WhatsApp por QR",
+        "servicio_existente": "",
+        "guardar": true,
+        "guardar_dominio": true
+      },
+      "redes": {
+        "nombre": "Redes sociales",
+        "patrones": [
+          "facebook.com",
+          "fb.com",
+          "fb.me",
+          "instagram.com",
+          "instagr.am",
+          "tiktok.com",
+          "x.com",
+          "twitter.com",
+          "youtube.com",
+          "youtu.be",
+          "linktr.ee",
+          "threads.net"
+        ],
+        "observacion": "ya comparte sus redes sociales por QR",
+        "servicio_existente": "",
+        "guardar": true,
+        "guardar_dominio": true
+      },
+      "mapa": {
+        "nombre": "Mapa o ubicación",
+        "esquemas": [
+          "geo"
+        ],
+        "patrones": [
+          "maps.google.com",
+          "google.com/maps",
+          "maps.app.goo.gl",
+          "goo.gl/maps",
+          "waze.com",
+          "maps.apple.com"
+        ],
+        "observacion": "ya comparte su ubicación por QR",
+        "servicio_existente": "",
+        "guardar": true,
+        "guardar_dominio": true
+      },
+      "contacto": {
+        "nombre": "Tarjeta de contacto",
+        "prefijos": [
+          "BEGIN:VCARD",
+          "MECARD:"
+        ],
+        "observacion": "ya comparte una tarjeta de contacto por QR",
+        "servicio_existente": "",
+        "guardar": true,
+        "guardar_dominio": false
+      },
+      "wifi": {
+        "nombre": "Wi-Fi",
+        "prefijos": [
+          "WIFI:"
+        ],
+        "observacion": "ofrece Wi-Fi a sus clientes por QR",
+        "servicio_existente": "",
+        "guardar": true,
+        "guardar_dominio": false
+      },
+      "enlace": {
+        "nombre": "Enlace web",
+        "observacion": "comparte por QR un enlace a {dominio}",
+        "servicio_existente": "",
+        "guardar": true,
+        "guardar_dominio": true
+      },
+      "texto": {
+        "nombre": "Texto",
+        "observacion": "",
+        "servicio_existente": "",
+        "guardar": false,
+        "guardar_dominio": false
+      }
+    }
+  },
+  "aprendizaje": {
+    "descripcion": "Registro seudonimizado de errores y correcciones, huella de envíos y comparación por estrategia.",
+    "muestra_minima": 10,
+    "funciones": [
+      "copiloto",
+      "clasificacion",
+      "qr",
+      "revision"
+    ],
+    "resultados": [
+      "interes",
+      "rechazo",
+      "educativa",
+      "respuesta",
+      "sin_respuesta"
+    ]
+  }
 }

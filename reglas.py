@@ -149,6 +149,20 @@ def validar_reglas(r: dict) -> None:
         _exigir(rec["url"].startswith("https://"), f"El recurso «{rec['id']}» debe usar https.")
         _exigir(isinstance(rec.get("palabras", []), list), f"«palabras» del recurso «{rec['id']}» debe ser una lista.")
         vistos.add(rec["id"])
+    # Fase 3: QR local
+    q = r.get("qr") or {}
+    _exigir(isinstance(q.get("tipos"), dict) and "texto" in q["tipos"] and "enlace" in q["tipos"], "qr.tipos debe incluir «texto» y «enlace».")
+    for tid in q.get("orden", []):
+        _exigir(tid in q["tipos"], f"qr.orden menciona un tipo inexistente: «{tid}».")
+    for tid, cfg in q["tipos"].items():
+        for k in ("nombre", "observacion", "servicio_existente", "guardar", "guardar_dominio"):
+            _exigir(k in cfg, f"Al tipo de QR «{tid}» le falta «{k}».")
+        _exigir(not cfg["servicio_existente"] or cfg["servicio_existente"] in r["servicios"],
+                f"El tipo de QR «{tid}» apunta a un servicio inexistente.")
+    # Fase 4: aprendizaje
+    a = r.get("aprendizaje") or {}
+    _exigir(isinstance(a.get("muestra_minima"), int) and a["muestra_minima"] >= 1, "aprendizaje.muestra_minima debe ser un entero ≥ 1.")
+    _exigir(isinstance(a.get("funciones"), list) and a["funciones"], "aprendizaje.funciones debe ser una lista.")
     for mid, mod in r["modalidades"].items():
         for k in ("saludos", "presentacion", "hechos", "con_necesidad", "pregunta_con_necesidad", "calido", "seguimiento"):
             _exigir(k in mod, f"A la modalidad «{mid}» le falta «{k}».")
