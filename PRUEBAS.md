@@ -41,7 +41,7 @@ pytest -v tests/test_acceptance.py
 
 ## Actualización 2026-11-25 — rama `feat/aprendizaje-errores`
 
-Resultado (Fase 2): **147 pruebas recolectadas — 145 pasan, 1 en fallo esperado (xfail estricto, QR de la Fase 3), 1 solo en Windows** (`tests/test_real_launch.py`, usa `netstat`/`findstr`).
+Resultado (Fases 3 y 4): **177 pruebas recolectadas — 176 pasan, 0 en fallo esperado, 1 solo en Windows** (`tests/test_real_launch.py`, usa `netstat`/`findstr`).
 
 | Archivo | Pruebas | Qué cubre |
 | :--- | ---: | :--- |
@@ -49,10 +49,13 @@ Resultado (Fase 2): **147 pruebas recolectadas — 145 pasan, 1 en fallo esperad
 | `tests/test_whatsapp_first.py` | 16 | Canales WhatsApp-first y copiloto |
 | `tests/test_movil_sync.py` | 13 | Sincronización PC ⇄ celular |
 | `tests/test_contact_flow.py` | 18 | Pendientes / Abiertos / Contactados y números repetidos |
-| `tests/test_aprendizaje_aceptacion.py` | 13 | Los 7 errores reales (12 corregidos + 1 xfail) |
+| `tests/test_aprendizaje_aceptacion.py` | 13 | Los 7 errores reales (13 corregidos) |
 | `tests/test_fase2_conversacion.py` | 23 | Intenciones, memoria comercial, recursos gratuitos, seguimiento único, cierre y reapertura, educativos, retroalimentación y eventos del celular |
 | `tests/test_reglas_validacion.py` | 41 | Reglas extensibles, identidad, revisión de borradores, API y sincronización |
-| `tests/test_paridad_motor.py` | 1 | Python y `docs/motor.js` dan resultados idénticos, también en conversación, seguimiento y recursos (requiere Node; si no hay, se omite) |
+| `tests/test_fase3_qr.py` | 17 | Tipos de QR, nada de contraseñas ni datos personales, caso 5, API, evento del celular y jsQR sin red |
+| `tests/test_fase4_aprendizaje.py` | 8 | Seudónimo HMAC, anonimización, registro de correcciones, huella, estrategias, tokens en 0 y exportación |
+| `tests/test_actualizacion.py` | 5 | Respaldo con clave, prueba sobre copia, migración sin pérdidas, reversión y respaldo dañado |
+| `tests/test_paridad_motor.py` | 1 | Python y `docs/motor.js` dan resultados idénticos, también en conversación, seguimiento, recursos, QR, huella y estrategias (requiere Node; si no hay, se omite) |
 | `tests/test_real_launch.py` | 1 | Arranque real en Windows |
 
 ```powershell

@@ -55,6 +55,10 @@ Detalles en [`docs/LEEME.md`](docs/LEEME.md). La búsqueda automática con audit
 
 ---
 
+## Actualizar a una versión nueva
+
+Sigue `ACTUALIZACION.md`: un solo procedimiento para la PC y el iPhone, con respaldo, prueba de la migración sobre una copia (`python actualizar.py probar`), migración verificada, sincronización y reversión.
+
 ## Estructura del Proyecto
 
 ```text

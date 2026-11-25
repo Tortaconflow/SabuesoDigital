@@ -1,4 +1,4 @@
-# Aprendizaje basado en errores reales — Fases 0, 1 y 2
+# Aprendizaje basado en errores reales — Fases 0 a 4
 
 Rama: `feat/aprendizaje-errores` (no fusionada). Base: `claude/upbeat-wozniak-vht8fn` @ `24764f9`.
 Metodología: cada error observado se convirtió primero en una prueba reproducible
@@ -11,10 +11,10 @@ Metodología: cada error observado se convirtió primero en una prueba reproduci
 | 7. La necesidad confirmada prevalece sobre la inferencia | 1 | ❌ | ✅ |
 | 3. Si quiere conservar su página, no se insiste | 2 | ❌ | ✅ |
 | 4. Respuesta automática no cuenta como oportunidad | 2 | ❌ | ✅ |
-| 5. QR recibido se interpreta antes de recomendar | 3 | ❌ | ⏳ xfail estricto |
+| 5. QR recibido se interpreta antes de recomendar | 3 | ❌ | ✅ |
 | 6. Rechazo explícito cierra la prospección | 2 | ❌ | ✅ |
 
-«xfail estricto»: la prueba documenta el error y falla en rojo si alguien lo corrige sin actualizarla.
+Los 7 casos pasan. Ya no queda ninguna prueba en «fallo esperado».
 
 ---
 
@@ -153,6 +153,51 @@ Todo funciona sin internet y sin IA (0 tokens), con las mismas reglas en la PC y
 - **Revisión de recursos.** El catálogo debe revisarse antes del 21-feb-2027. Después, los recursos dejan de sugerirse hasta que se actualicen.
 - **Versión de la PC.** Para importar los eventos nuevos del celular, la PC necesita esta versión. Una PC anterior marca como error solo esos eventos y sí importa los demás. Después de actualizarla, basta con volver a importar el mismo archivo: los eventos que fallaron se aplican y los que ya estaban no se repiten.
 
+## Fase 3 — QR local (caso 5)
+
+**Evidencia (antes).** Un restaurante que enviaba el QR de su menú digital seguía recibiendo la propuesta de un catálogo digital. El QR no se leía, así que lo que mostraba no llegaba a la recomendación.
+
+**Causa raíz.** Sabueso no tenía forma de leer un QR ni de convertir lo que contiene en un hecho observable.
+
+**Cambio.**
+- **Lectura en el navegador:** la foto o captura se lee en la PC y en el celular con jsQR 1.4.0 (Apache-2.0), incluido en el proyecto (`docs/vendor/`, `static/js/vendor/`). No usa internet. Si la foto está borrosa, se puede pegar el enlace a mano.
+- **Interpretación (`qr_local.py`, `interpretarQr` en `docs/motor.js`):** reconoce WhatsApp, menú o catálogo (incluido el catálogo de `wa.me/c/`), redes, mapa, tarjeta de contacto, Wi-Fi, enlace y texto. El enlace se muestra como texto y **nunca se abre**. Los tipos y patrones están en `qr` dentro de las reglas.
+- **Lo que se guarda:** solo el **tipo y el dominio**, en `negocios.qr_recibidos`. Nunca se guarda la contraseña del Wi-Fi, ningún dato de las tarjetas de contacto ni el número que lleva un enlace de WhatsApp. Todo lo que llega del celular se vuelve a sanear.
+- **Antes de recomendar:** lo que el QR demuestra que el negocio ya tiene entra en la memoria como `canal_existente`, con fuente `qr`, y ese servicio se excluye. Además el hecho se suma a la observación verificada.
+
+**Después.** «Sitio web oficial activo (lapalapa.example); WhatsApp público comprobado (+529581239876) en su sitio oficial; **ya cuenta con menú digital (QR: menu.example)**.» El servicio deja de ser `catalogos`, y el borrador pregunta si su menú impreso y digital está actualizado.
+
+**Limitaciones.**
+- La interpretación se hace por dominio y por palabras del enlace («menu», «carta», «catalogo»). Un menú publicado en un dominio genérico, sin esas palabras, queda como «Enlace web».
+- jsQR puede no leer fotos muy borrosas, oscuras o con el QR muy pequeño. En ese caso, pega el enlace a mano.
+
+## Fase 4 — Aprendizaje y métricas
+
+**Evidencia (antes).** Las correcciones que hacía una persona se perdían. Por ejemplo, cambiar la clasificación sugerida o corregir el giro no dejaba rastro. Tampoco había forma de saber qué plantilla obtenía más respuestas humanas.
+
+**Cambio.**
+- **Seudónimos (`aprendizaje.py`):** cada prospecto se identifica con un **HMAC-SHA256 con una clave local** (`clave_seudonimos.key`, junto a la base). Esto es **seudonimización, no anonimización**. La clave nunca se reemplaza sola: si está dañada, se avisa.
+- **Registro de errores y correcciones** (`aprendizaje_registro`):
+  - Tipos: clasificación corregida (sugerida ≠ confirmada), dato incorrecto (el negocio corrige un dato), identidad corregida (giro o nombre), mensaje editado antes de enviarlo y observación del revisor aprobada por una persona.
+  - Los textos se guardan sin correos, teléfonos, enlaces, nombre ni dominio del negocio, ni nombres de personas («soy…», «me llamo…»).
+- **Huella de cada envío confirmado** (`envios_huella`): plantilla, estrategia (`relación|plantilla|servicio`), caracteres, preguntas, si se editó y los códigos del revisor. El texto del mensaje no se guarda.
+  - El celular calcula la huella contra *sus* borradores y la manda con el contacto confirmado. La PC la valida campo por campo.
+- **Comparación por estrategia:**
+  - Cuenta envíos, respuestas humanas, interés, rechazos y conversaciones educativas.
+  - Avisa si la muestra es chica: menos de `muestra_minima`, que es 10.
+  - Las respuestas automáticas no cuentan como respuesta, y lo educativo no cuenta como interés.
+- **Contador por función** (`consumo_ia`): copiloto, clasificación, QR y revisión. Registra cuántas veces se usa cada una y siempre **0 tokens**.
+- **Pantallas:**
+  - **PC:** botón «Aprendizaje», con el informe descargable seudonimizado.
+  - **Celular:** sección «Qué estrategia funciona» en Hoy.
+  - **API:** `/api/aprendizaje` y `/api/aprendizaje/exportar`.
+
+**Limitaciones.**
+- `envios_huella` guarda el `negocio_id` para unir cada envío con sus respuestas. Ese dato vive solo en tu base local y **nunca se exporta**.
+- En el celular, el resultado de cada envío se calcula con la última respuesta registrada. En la PC se calcula con todas las respuestas recibidas entre un envío y el siguiente.
+- Con menos de 10 envíos por estrategia, los porcentajes no son concluyentes, y la pantalla lo avisa.
+- El registro empieza a llenarse desde esta versión. Lo que pasó antes no se reconstruye.
+
 ## Consumo de tokens
 
 **0.** La integración con Gemini nunca se ejecutaba: `use_ai` y `api_key` llegaban al copiloto pero se ignoraban (el README decía lo contrario). Ahora se ignoran a propósito y está documentado. Cada resultado reporta `consumo_tokens: 0` y `motor: reglas_deterministas`. Una prueba verifica que el copiloto, la validación y las reglas no importan clientes de IA ni de red.
@@ -173,7 +218,8 @@ Pruebas que recolecta `pytest` en cada rama del repositorio en GitHub:
 | `feat/whatsapp-first-mvp` (predeterminada) | 76c676e | 38 |
 | `claude/upbeat-wozniak-vht8fn` | 24764f9 | 69 (68 aquí + 1 solo Windows) |
 | `feat/aprendizaje-errores` (esta) | Fase 1: 0121cfb | 124 (119 + 4 xfail + 1 solo Windows) |
-| `feat/aprendizaje-errores` (esta) | Fase 2 | 147 (145 + 1 xfail + 1 solo Windows) |
+| `feat/aprendizaje-errores` (esta) | Fase 2: b46cf55 | 147 (145 + 1 xfail + 1 solo Windows) |
+| `feat/aprendizaje-errores` (esta) | Fases 3 y 4 | 177 (176 + 1 solo Windows) |
 
 El número **129 no aparece en ningún archivo ni commit** de ninguna rama. Lo más probable es que salga de la copia local en tu PC (el README apunta a `C:\Users\user\.gemini\antigravity\scratch\prospector`), con pruebas o commits que nunca se subieron. Para comprobarlo en Windows:
 
@@ -184,8 +230,6 @@ git log --oneline origin/HEAD..HEAD
 pytest --collect-only -q | Select-Object -Last 1
 ```
 
-## Pendiente (no autorizado todavía)
+## Pendiente (fuera del alcance de esta iteración)
 
-- **Fase 3:** lectura local de QR (caso 5).
-- **Fase 4:** registro seudonimizado de errores y correcciones, y métricas por estrategia y de tokens.
 - **Después:** modalidades de prospección comercial, reciprocidad comunitaria, comunidad universitaria y validación tecnológica. Las reglas ya tienen `modalidades` para agregarlas como datos.

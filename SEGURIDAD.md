@@ -41,3 +41,12 @@ Este documento resume las correcciones de seguridad defensiva aplicadas durante 
 - `docs/index.html` declara una CSP estricta (`script-src 'self'`, `connect-src 'self'`): la app no puede cargar scripts externos ni enviar datos a otros dominios.
 - La importación en la PC valida formato, versión, tamaño (10 MB), tipos de evento y campos permitidos; hace respaldo verificado de SQLite antes de aplicar cambios y registra cada evento en `movil_sync`.
 - Los archivos `sabueso_para_celular_*.json`, `sabueso_avances_*.json` y los respaldos del celular contienen datos de clientes: compártelos solo hacia tus propias cuentas (tu WhatsApp, tu correo o tu iCloud) y bórralos de chats compartidos.
+
+## 5. Aprendizaje y QR (Fases 3 y 4)
+
+- **Seudónimos:** el registro de aprendizaje identifica a cada prospecto con HMAC-SHA256 y una clave local (`data/clave_seudonimos.key`, ignorada por Git).
+  - Es **seudonimización, no anonimización**: con la clave y la base se puede volver a vincular.
+  - Respáldala con `python actualizar.py respaldo` y no la compartas.
+- **Exportación:** el informe descargable no incluye ids, nombres, teléfonos, correos, enlaces ni dominios del negocio.
+- **QR:** la interpretación nunca abre el enlace ni consulta internet. No se guardan contraseñas de Wi-Fi ni datos de tarjetas de contacto.
+- **jsQR:** jsQR 1.4.0 (Apache-2.0) se incluye tal cual en `docs/vendor/` y `static/js/vendor/`, con su licencia. No hace peticiones de red.

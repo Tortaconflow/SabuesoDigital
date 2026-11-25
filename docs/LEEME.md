@@ -86,6 +86,17 @@ iPhone ── «Enviar avances» (menú Compartir) ──► sabueso_avances_…
 - **Lo que quieren conservar o no quieren** (por ejemplo, su página) ya no se les vuelve a ofrecer.
 - **Seguimiento:** máximo uno y manual. Desde el día 5 después del contacto confirmado (se sugiere entre el día 5 y el 7) y solo si no han contestado.
 
+## QR recibido y qué estrategia funciona (sin internet, 0 tokens)
+
+- **QR:** en la ficha, «QR recibido» → elige la foto o captura del QR, o pega el enlace → «Interpretar QR».
+  - Verás qué es: menú, WhatsApp, redes, mapa, tarjeta, Wi-Fi o enlace.
+  - El enlace se muestra como texto y **no se abre**.
+  - «Guardar en la memoria del negocio» guarda solo el tipo y el dominio. Nunca guarda contraseñas de Wi-Fi ni datos de una tarjeta.
+  - Si el QR muestra que el negocio ya tiene algo (por ejemplo, un menú digital), Sabueso ya no se lo ofrece.
+- **Qué estrategia funciona (pestaña Hoy):** por cada estrategia (relación · plantilla · servicio) muestra envíos, respuestas humanas, interés, rechazos y conversaciones educativas.
+  - Con menos de 10 envíos aparece «Muestra chica»: todavía no saques conclusiones.
+  - Al confirmar un contacto, el celular guarda la **huella** del envío: plantilla, largo, preguntas y si lo editaste. El texto no se guarda.
+
 ## Reglas CÍDIKS que respeta
 
 - Abrir WhatsApp o copiar un mensaje **no** marca a nadie como contactado: hay que confirmarlo.
@@ -103,6 +114,7 @@ iPhone ── «Enviar avances» (menú Compartir) ──► sabueso_avances_…
 | `index.html` | Estructura de la app y política de seguridad (CSP: sin scripts ni conexiones externas) |
 | `app.js` | Lógica: almacenamiento local, sincronización, ficha, CRM, copiloto de bolsillo |
 | `app.css` | Estilos (misma paleta que Sabueso PC) |
+| `vendor/jsQR.js` | Lector de QR (jsQR 1.4.0, Apache-2.0); funciona sin internet |
 | `sw.js` | Service worker: guarda la app para abrir sin internet |
 | `manifest.webmanifest`, `icons/` | Instalación en pantalla de inicio |
 

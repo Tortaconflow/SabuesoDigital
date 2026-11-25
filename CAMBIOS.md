@@ -1,5 +1,32 @@
 # Registro de Cambios: Sabueso Digital 2.0 (CÍDIKS Sales Engine)
 
+## [2.4.0] - 2026-11-25 — QR local y aprendizaje seudonimizado (Fases 3 y 4)
+
+Rama `feat/aprendizaje-errores` (sin fusionar). El procedimiento para actualizar está en `ACTUALIZACION.md`.
+
+### Nuevo
+- **QR recibido (PC y celular, sin internet):**
+  - Se lee de una foto con jsQR 1.4.0, incluido en el proyecto, o pegando el enlace.
+  - Indica el tipo: WhatsApp, menú o catálogo, redes, mapa, tarjeta de contacto, Wi-Fi, enlace o texto.
+  - Nunca abre el enlace. Solo se guarda el tipo y el dominio.
+  - Lo que el QR demuestra que el negocio ya tiene no se vuelve a proponer.
+- **Aprendizaje:**
+  - Registro de errores y correcciones con seudónimo HMAC y clave local, sin datos personales.
+  - Huella de cada envío confirmado.
+  - Comparación por estrategia con aviso de muestra chica.
+  - Contador de usos y tokens por función (0).
+  - Panel «Aprendizaje» en la PC, «Qué estrategia funciona» en el celular e informe descargable.
+- **`actualizar.py`:** comandos `estado`, `respaldo` (incluye la clave), `probar` (sobre una copia), `migrar` (con verificación y reversión automática si falla) y `revertir`.
+- **Sabueso Móvil 1.4.0:** eventos nuevos `qr_recibido` y huella en `contacto_confirmado`. Sigue siendo compatible con la PC y con el celular de la versión anterior.
+- **Base de datos (solo agrega):** `negocios.qr_recibidos` y las tablas `aprendizaje_registro`, `envios_huella` y `consumo_ia`.
+
+### Corregido
+- Un QR de menú digital ya no termina en una propuesta de catálogo (caso 5).
+
+### Pruebas
+- **177 recolectadas:** 176 pasan, 0 en fallo esperado y 1 solo en Windows.
+- **Recorridos en navegador sin errores:** QR y estrategia en el celular, QR y aprendizaje en la PC, y los 4 recorridos de las fases anteriores.
+
 ## [2.3.0] - 2026-11-25 — Conversación, memoria comercial y ecosistema CÍDIKS (Fase 2)
 
 Rama `feat/aprendizaje-errores` (sin fusionar). Detalle, causa raíz y antes/después en `APRENDIZAJE_ERRORES.md`.
