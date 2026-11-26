@@ -13,6 +13,7 @@ import reglas
 
 from sabueso_ia_lab.core import MAX_ENTRADA, MAX_SALIDA, Laboratorio, Simulador, _interpretar
 from sabueso_ia_lab.exp02.local import iniciar, pico_ram, ruta_local, sha256
+from sabueso_ia_lab.exp02.ollama import OPCIONES, Ollama, guardar
 
 RAIZ = Path(__file__).resolve().parent
 LIMITES = {
@@ -43,6 +44,7 @@ class LaboratorioLocal(Laboratorio):
         self.intento = "omitido"
         self.cita_inventada = False
         self.latencia = None
+        self.error = None
 
     def _responder(self, entrada):
         inicio = time.perf_counter()
@@ -52,6 +54,11 @@ class LaboratorioLocal(Laboratorio):
             raw = self.servicio.responder(texto, self.categorias)
         except (OSError, ValueError, http.client.HTTPException, KeyError, IndexError, TypeError) as error:
             self.intento = "timeout" if isinstance(error, TimeoutError) else "error_proveedor"
+            codigo = str(error)
+            self.error = codigo if isinstance(error, ValueError) and (
+                codigo in {"generacion_incompleta", "contenido_invalido", "http_longitud"}
+                or (codigo.startswith("http_") and codigo[5:].isdigit())
+            ) else type(error).__name__
             raise ValueError(self.intento) from error
         finally:
             self.latencia = round((time.perf_counter() - inicio) * 1000, 3)
@@ -65,7 +72,7 @@ class LaboratorioLocal(Laboratorio):
         return raw
 
 
-def ejecutar(filas, servicio=None):
+def ejecutar(filas, servicio=None, *, guardar_caso=None):
     categorias = reglas.cargar_reglas()["respuestas"]["categorias"]
     resultados = []
     for fila in filas:
@@ -80,7 +87,7 @@ def ejecutar(filas, servicio=None):
         lectura = resultado["lectura"]
         certeza = lectura["certeza"] if lectura else None
         prediccion = lectura["categoria"] if lectura and (certeza != "incierta" or lectura["categoria"] == "rechazo") else resultado["categoria"]
-        resultados.append({
+        fila_resultado = {
             "id": fila["id"], "prediccion": prediccion, "motor": resultado["categoria"],
             "estado": resultado["estado"], "lectura_provisional": lectura,
             "borrador": resultado["borrador"], "recursos": resultado["recursos"],
@@ -89,7 +96,17 @@ def ejecutar(filas, servicio=None):
             "latencia_inferencia_ms": lab.latencia if servicio else None,
             "intento": lab.intento if servicio else "no_aplica",
             "cita_inventada": lab.cita_inventada if servicio else False,
-        })
+        }
+        if isinstance(servicio, Ollama):
+            intento = lab.intento != "omitido"
+            fila_resultado.update(
+                error=lab.error or ("contrato_o_evidencia_invalidos" if intento and resultado["estado"] == "fallback" else None),
+                abstencion=certeza == "incierta",
+                ollama=servicio.medicion if intento else None,
+            )
+        resultados.append(fila_resultado)
+        if guardar_caso is not None:
+            guardar_caso(fila_resultado)
     return resultados
 
 
@@ -152,13 +169,38 @@ def huella(path):
     return hashlib.sha256(path.read_text(encoding="utf8").encode("utf8")).hexdigest()
 
 
+def ejecutar_ollama(path, filas, identidad, servicio):
+    """Reanuda el prefijo guardado con la misma configuración y el mismo corpus."""
+    if path.exists():
+        lote = json.loads(path.read_text(encoding="utf8"))
+        if any(lote.get(k) != v for k, v in identidad.items()):
+            raise ValueError("El archivo pertenece a otra configuración, runtime, modelo o corpus.")
+    else:
+        lote = {**identidad, "predicciones": []}
+    predicciones = lote["predicciones"]
+    ids = [fila["id"] for fila in filas]
+    if [fila["id"] for fila in predicciones] != ids[:len(predicciones)]:
+        raise ValueError("El progreso no es un prefijo válido del corpus.")
+
+    def avanzar(fila):
+        predicciones.append(fila)
+        guardar(path, lote)
+        print(f"{len(predicciones)}/{len(filas)} {fila['id']} {fila['estado']}", flush=True)
+
+    ejecutar(filas[len(predicciones):], servicio, guardar_caso=avanzar)
+
+
 def main():
     parser = argparse.ArgumentParser()
     modos = parser.add_subparsers(dest="modo", required=True)
     motor = modos.add_parser("motor")
     local = modos.add_parser("local")
+    ollama = modos.add_parser("ollama")
+    ollama.add_argument("--piloto", action="store_true")
+    ollama.add_argument("--timeout", type=int, default=60)
     puntaje = modos.add_parser("puntuar")
-    for sub in (motor, local):
+    puntaje.add_argument("--piloto", action="store_true")
+    for sub in (motor, local, ollama):
         sub.add_argument("--salida", type=Path, required=True)
     local.add_argument("--exe", type=ruta_local, required=True)
     local.add_argument("--gguf", type=ruta_local, required=True)
@@ -166,21 +208,54 @@ def main():
     local.add_argument("--timeout", type=int, default=60)
     puntaje.add_argument("predicciones", type=Path)
     args = parser.parse_args()
-    entradas = RAIZ / "entradas.jsonl"
+    piloto = getattr(args, "piloto", False)
+    entradas = RAIZ / ("piloto.jsonl" if piloto else "entradas.jsonl")
     if args.modo == "puntuar":
         lote = json.loads(args.predicciones.read_text(encoding="utf8"))
         if lote["entradas_sha256"] != huella(entradas):
             parser.error("La huella del corpus no coincide con el lote.")
-        referencia = RAIZ / "referencia.jsonl"
+        referencia = RAIZ / ("piloto_referencia.jsonl" if piloto else "referencia.jsonl")
         metricas = puntuar(lote["predicciones"], leer(referencia))
+        if lote["ejecucion"]["brazo"] == "ollama":
+            mediciones = [f["ollama"] for f in lote["predicciones"] if f["ollama"] is not None]
+            metricas["ollama"] = {
+                "errores": {f["id"]: f["error"] for f in lote["predicciones"] if f["error"]},
+                "total_tokens_entrada": sum(m.get("prompt_eval_count", 0) for m in mediciones)
+                if any("prompt_eval_count" in m for m in mediciones) else "NOT_TESTED",
+                "total_tokens_salida": sum(m.get("eval_count", 0) for m in mediciones)
+                if any("eval_count" in m for m in mediciones) else "NOT_TESTED",
+                "respuestas_con_conteo": sum("eval_count" in m for m in mediciones),
+            }
         print(json.dumps({"ejecucion": lote["ejecucion"], "referencia_sha256": huella(referencia),
                           "metricas": metricas}, ensure_ascii=False, indent=2))
         return
 
     filas = leer(entradas)
-    if len(por_id(filas)) != 105:
-        parser.error("El protocolo E02 requiere exactamente 105 entradas.")
+    esperadas = 7 if piloto else 105
+    if len(por_id(filas)) != esperadas:
+        parser.error(f"Esta corrida requiere exactamente {esperadas} entradas.")
     meta = {"brazo": args.modo, "plataforma": platform.platform(), "python": platform.python_version()}
+    if args.modo == "ollama":
+        if not 1 <= args.timeout <= 180:
+            parser.error("El timeout debe estar entre 1 y 180 segundos.")
+        servicio = Ollama(args.timeout)
+        try:
+            meta.update({
+                "protocolo": "E02-A", "piloto": piloto, **servicio.identificar(),
+                "opciones": OPCIONES, "think": False, "timeout_s": args.timeout,
+                "pico_ram_proceso_bytes": "NOT_TESTED",
+                "codigo_sha256": {
+                    archivo.name: huella(archivo) for archivo in (
+                        RAIZ / "evaluar.py", RAIZ / "local.py", RAIZ / "ollama.py", RAIZ.parent / "core.py"
+                    )
+                },
+            })
+            ejecutar_ollama(args.salida, filas, {
+                "ejecucion": meta, "entradas_sha256": huella(entradas),
+            }, servicio)
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            parser.error(str(error))
+        return
     if args.salida.exists():
         parser.error("El archivo de salida ya existe.")
     if args.modo == "local":

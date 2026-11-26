@@ -55,8 +55,31 @@ def pico_ram(pid):
         cerrar(handle)
 
 
+def contrato(texto, categorias):
+    propiedades = {
+        "categoria": {"type": "string", "enum": sorted(categorias)},
+        "servicio": {"type": "string", "enum": sorted(SERVICIOS)},
+        "certeza": {"type": "string", "enum": ["explicita", "inferida", "incierta"]},
+        "cita": {"type": "string", "minLength": 8, "maxLength": 180},
+    }
+    esquema = {"type": "object", "properties": propiedades, "required": list(propiedades),
+               "additionalProperties": False}
+    sistema = (
+        INSTRUCCION + " Cita entre 8 y 180 caracteres exactos del campo respuesta. "
+        "La categoría humana cubre acuses y ambigüedad sin intención clara. Distingue orientación "
+        "personalizada, solicitud de material educativo e intención explícita de contratar. "
+        "Un cierre implícito también es rechazo. Si la intención es incierta elige certeza incierta. "
+        "Las etiquetas válidas son: " + ", ".join(sorted(categorias)) +
+        ". Servicios válidos: " + ", ".join(sorted(SERVICIOS)) + "."
+    )
+    return esquema, [
+        {"role": "system", "content": sistema},
+        {"role": "user", "content": json.dumps({"respuesta": texto}, ensure_ascii=False)},
+    ]
+
+
 class Local:
-    def __init__(self, puerto, clave, timeout, proceso):
+    def __init__(self, puerto, clave, timeout, proceso=None):
         self.puerto = puerto
         self.clave = clave
         self.timeout = timeout
@@ -68,7 +91,9 @@ class Local:
         try:
             conexion.request("GET" if datos is None else "POST", ruta,
                              body=None if datos is None else json.dumps(datos).encode(),
-                             headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.clave}"})
+                             headers={"Content-Type": "application/json", **(
+                                 {"Authorization": f"Bearer {self.clave}"} if self.clave else {}
+                             )})
             respuesta = conexion.getresponse()
             if respuesta.status != 200:
                 raise ValueError(f"http_{respuesta.status}")
@@ -80,28 +105,12 @@ class Local:
             conexion.close()
 
     def responder(self, texto, categorias):
-        propiedades = {
-            "categoria": {"type": "string", "enum": sorted(categorias)},
-            "servicio": {"type": "string", "enum": sorted(SERVICIOS)},
-            "certeza": {"type": "string", "enum": ["explicita", "inferida", "incierta"]},
-            "cita": {"type": "string", "minLength": 8, "maxLength": 180},
-        }
-        esquema = {"type": "object", "properties": propiedades, "required": list(propiedades),
-                   "additionalProperties": False}
-        sistema = (
-            INSTRUCCION + " Cita entre 8 y 180 caracteres exactos del campo respuesta. "
-            "La categoría humana cubre acuses y ambigüedad sin intención clara. Distingue orientación "
-            "personalizada, solicitud de material educativo e intención explícita de contratar. "
-            "Un cierre implícito también es rechazo. Si la intención es incierta elige certeza incierta. "
-            "Las etiquetas válidas son: " + ", ".join(sorted(categorias)) +
-            ". Servicios válidos: " + ", ".join(sorted(SERVICIOS)) + "."
-        )
+        esquema, mensajes = contrato(texto, categorias)
         datos = {
             "model": "sabueso-e02", "temperature": 0, "seed": 5700, "max_tokens": 192,
             "stream": False, "cache_prompt": False,
             "response_format": {"type": "json_schema", "json_schema": {"name": "lectura_sabueso", "strict": True, "schema": esquema}},
-            "messages": [{"role": "system", "content": sistema},
-                         {"role": "user", "content": json.dumps({"respuesta": texto}, ensure_ascii=False)}],
+            "messages": mensajes,
         }
         respuesta = self.solicitar("/v1/chat/completions", datos)
         candidato = respuesta["choices"][0]
