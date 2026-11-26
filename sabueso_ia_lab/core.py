@@ -65,6 +65,9 @@ class Laboratorio:
         self._consultas = deque()
         self._restantes = 30
 
+    def _responder(self, entrada):
+        return self._simulador.responder(entrada)
+
     def analizar(self, prospecto, *, activar=False):
         texto = prospecto.get("respuesta", "")
         if type(texto) is not str or not 1 <= len(texto) <= MAX_ENTRADA:
@@ -101,7 +104,7 @@ class Laboratorio:
                 self._consultas.append(ahora)
                 minimizado = conversacion.redactar(texto, MAX_ENTRADA)
                 try:
-                    raw = self._simulador.responder({"instruccion": INSTRUCCION, "respuesta": minimizado})
+                    raw = self._responder({"instruccion": INSTRUCCION, "respuesta": minimizado})
                     lectura = _interpretar(raw, minimizado, r["respuestas"]["categorias"])
                 except (KeyError, ValueError):
                     salida["estado"] = "fallback"
