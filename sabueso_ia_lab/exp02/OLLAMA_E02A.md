@@ -6,17 +6,18 @@ El comando usa `127.0.0.1:11434`. Verifica el modelo en `/api/tags` antes de con
 
 ## PowerShell
 
-Utiliza Python 3.11 o posterior. Ejecuta primero el piloto, revisa que el esquema funcione y que se omitan las llamadas cuando hay preferencias registradas. Puede haber menos de siete llamadas por las guardas. Las siete entradas son independientes del corpus previo y del corpus congelado. Usa el mismo código y prompt en la evaluación completa.
+Utiliza Python 3.11 o posterior. Si el lanzador no detecta tu instalación, comprueba `python --version` y, si cumple el requisito, sustituye `py -3` por `python`. Ejecuta primero el piloto, revisa que el esquema funcione y que se omitan las llamadas cuando hay preferencias registradas. Puede haber menos de siete llamadas por las guardas. Las siete entradas son independientes del corpus previo y del corpus congelado. Usa el mismo código y prompt en la evaluación completa.
 
 ```powershell
 git clone --single-branch --branch feat/sabueso-ia-ollama-e02a https://github.com/Tortaconflow/SabuesoDigital.git Sabueso-E02A
 Set-Location Sabueso-E02A
+py -3 --version # Debe mostrar Python 3.11 o posterior
 $piloto = Join-Path $env:TEMP "sabueso-e02a-piloto.json"
 $completo = Join-Path $env:TEMP "sabueso-e02a-105.json"
-py -3.11 -m sabueso_ia_lab.exp02.evaluar ollama --piloto --salida $piloto
-py -3.11 -m sabueso_ia_lab.exp02.evaluar puntuar --piloto $piloto
-py -3.11 -m sabueso_ia_lab.exp02.evaluar ollama --salida $completo
-py -3.11 -m sabueso_ia_lab.exp02.evaluar puntuar $completo
+py -3 -m sabueso_ia_lab.exp02.evaluar ollama --piloto --salida $piloto
+py -3 -m sabueso_ia_lab.exp02.evaluar puntuar --piloto $piloto
+py -3 -m sabueso_ia_lab.exp02.evaluar ollama --salida $completo
+py -3 -m sabueso_ia_lab.exp02.evaluar puntuar $completo
 ```
 
 Ante una interrupción, repite el comando `ollama` con la misma ruta de salida y las mismas opciones. Cada caso completa un guardado atómico con su ID. Los casos ya guardados se omiten. Si la interrupción llegó antes del guardado, solo se repite el caso en curso. Los errores reportados y guardados también forman parte de esa corrida y conservan su resultado de retorno al motor. Una corrida nueva usa otra ruta. Usa un proceso por archivo de salida. El evaluador rechaza reanudar si cambian el corpus, el modelo, el runtime, el código experimental o los parámetros. El comando `puntuar` requiere el corpus terminado.
